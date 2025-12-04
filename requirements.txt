@@ -1,0 +1,22 @@
+# Web框架
+Flask==3.0.0
+Werkzeug==3.0.1
+
+# 文档处理
+python-docx==1.1.0
+
+# 数据科学和图形
+matplotlib==3.8.2
+numpy==1.26.2
+networkx==3.2.1
+
+# HTTP请求
+requests==2.31.0
+httpx>=0.24.0
+
+# 字符编码
+chardet==5.2.0
+charset-normalizer==3.3.2
+
+# AI API客户端
+openai>=1.0.0
