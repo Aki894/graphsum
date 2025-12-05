@@ -6,11 +6,17 @@ from collections import defaultdict
 from dotenv import load_dotenv
 import graph_layout
 from logger_config import init_logger, log_info, log_debug, log_warning, log_error, log_stream, log_stream_line
+from text_preprocessor import preprocess_text, get_preprocessor
 
 # 加载环境变量
 load_dotenv()
 
 class InterviewGraphGenerator:
+    # 从环境变量读取默认节点数量上限
+    DEFAULT_MAX_LEVEL2 = int(os.getenv("DEFAULT_MAX_LEVEL2_NODES", "8"))
+    DEFAULT_MAX_LEVEL3 = int(os.getenv("DEFAULT_MAX_LEVEL3_NODES", "20"))
+    DEFAULT_MAX_LEVEL4 = int(os.getenv("DEFAULT_MAX_LEVEL4_NODES", "30"))
+    
     def __init__(self):
         # 动态加载所有配置的服务商
         self.providers = self._load_providers()
@@ -32,7 +38,7 @@ class InterviewGraphGenerator:
         self.current_prompt_template = self.prompts_config.get('current', 'default')
         
         # 根据默认provider初始化
-        self.current_provider = os.getenv("DEFAULT_PROVIDER", "siliconflow")
+        self.current_provider = os.getenv("DEFAULT_PROVIDER", "deepseek")
         if self.current_provider not in self.providers:
             available = list(self.providers.keys())
             if available:
@@ -266,8 +272,13 @@ class InterviewGraphGenerator:
             log_info(f"    [API完成] 总长度: {len(result)} 字符")
             return result
     
-    def extract_text(self, file_path):
-        """根据文件扩展名自动选择提取方法"""
+    def extract_text(self, file_path, enable_preprocess=True):
+        """根据文件扩展名自动选择提取方法，并可选进行预处理
+        
+        Args:
+            file_path: 文件路径
+            enable_preprocess: 是否启用预处理（Reranker筛选），默认True
+        """
         ext = os.path.splitext(file_path)[1].lower()
         
         extractors = {
@@ -282,7 +293,16 @@ class InterviewGraphGenerator:
         
         extractor = extractors.get(ext)
         if extractor:
-            return extractor(file_path)
+            text = extractor(file_path)
+            
+            # 对字幕文件进行预处理（如果启用）
+            if enable_preprocess and ext in ['.ass', '.srt']:
+                preprocessor = get_preprocessor()
+                if preprocessor.is_enabled():
+                    log_info(f"[预处理] 检测到字幕文件，启用 Reranker 筛选...")
+                    text = preprocess_text(text, ext)
+            
+            return text
         else:
             supported = ', '.join(extractors.keys())
             raise ValueError(f"不支持的文件格式: {ext}，支持的格式: {supported}")
@@ -477,9 +497,9 @@ class InterviewGraphGenerator:
         Returns:
             graph_data dict or None
         """
-        max_level2 = max_nodes_config.get('level2', 8) if max_nodes_config else 8
-        max_level3 = max_nodes_config.get('level3', 20) if max_nodes_config else 20
-        max_level4 = max_nodes_config.get('level4', 30) if max_nodes_config else 30
+        max_level2 = max_nodes_config.get('level2', self.DEFAULT_MAX_LEVEL2) if max_nodes_config else self.DEFAULT_MAX_LEVEL2
+        max_level3 = max_nodes_config.get('level3', self.DEFAULT_MAX_LEVEL3) if max_nodes_config else self.DEFAULT_MAX_LEVEL3
+        max_level4 = max_nodes_config.get('level4', self.DEFAULT_MAX_LEVEL4) if max_nodes_config else self.DEFAULT_MAX_LEVEL4
         
         # 分段时每段的节点上限适当减少，避免单段过多
         per_chunk_level2 = max(3, max_level2 // 2)
@@ -561,9 +581,9 @@ class InterviewGraphGenerator:
         Returns:
             Merged graph_data dict
         """
-        max_level2 = max_nodes_config.get('level2', 8) if max_nodes_config else 8
-        max_level3 = max_nodes_config.get('level3', 20) if max_nodes_config else 20
-        max_level4 = max_nodes_config.get('level4', 30) if max_nodes_config else 30
+        max_level2 = max_nodes_config.get('level2', self.DEFAULT_MAX_LEVEL2) if max_nodes_config else self.DEFAULT_MAX_LEVEL2
+        max_level3 = max_nodes_config.get('level3', self.DEFAULT_MAX_LEVEL3) if max_nodes_config else self.DEFAULT_MAX_LEVEL3
+        max_level4 = max_nodes_config.get('level4', self.DEFAULT_MAX_LEVEL4) if max_nodes_config else self.DEFAULT_MAX_LEVEL4
         
         # 收集所有非 root 节点，按 level 分组
         level2_nodes = {}  # label -> node
@@ -736,9 +756,9 @@ class InterviewGraphGenerator:
         """使用GLM模型提取实体和关系，支持长文本分段提取"""
         
         # 获取节点数量上限配置
-        max_level2 = max_nodes_config.get('level2', 8) if max_nodes_config else 8
-        max_level3 = max_nodes_config.get('level3', 20) if max_nodes_config else 20
-        max_level4 = max_nodes_config.get('level4', 30) if max_nodes_config else 30
+        max_level2 = max_nodes_config.get('level2', self.DEFAULT_MAX_LEVEL2) if max_nodes_config else self.DEFAULT_MAX_LEVEL2
+        max_level3 = max_nodes_config.get('level3', self.DEFAULT_MAX_LEVEL3) if max_nodes_config else self.DEFAULT_MAX_LEVEL3
+        max_level4 = max_nodes_config.get('level4', self.DEFAULT_MAX_LEVEL4) if max_nodes_config else self.DEFAULT_MAX_LEVEL4
         
         log_info(f"    [AI提取] 使用提示词模板: {self.current_prompt_template}")
         log_info(f"    [AI提取] 节点数量上限: 第2层≤{max_level2}, 第3层≤{max_level3}, 第4层≤{max_level4}")

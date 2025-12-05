@@ -8,6 +8,7 @@ from flask import Flask, render_template, request, jsonify, send_file, send_from
 from interview_graph_generator import InterviewGraphGenerator
 from merge_graphs import GraphMerger
 from logger_config import init_logger, log_info, log_debug, log_warning, log_error, log_stream, log_stream_line
+from text_preprocessor import get_preprocessor
 
 # 加载环境变量
 load_dotenv()
@@ -135,6 +136,56 @@ def stream_logs(task_id):
         'X-Accel-Buffering': 'no',
         'Connection': 'keep-alive'
     })
+
+@app.route('/api/update_reranker_config', methods=['POST'])
+def update_reranker_config():
+    """更新 Reranker 预处理配置"""
+    try:
+        data = request.json
+        preprocessor = get_preprocessor()
+        
+        # 更新配置
+        preprocessor.enabled = data.get('enabled', False)
+        preprocessor.top_ratio = data.get('top_ratio', 0.8)
+        
+        log_info(f"[Reranker配置] enabled={preprocessor.enabled}, top_ratio={preprocessor.top_ratio}")
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        log_error(f"更新 Reranker 配置失败: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/get_reranker_config', methods=['GET'])
+def get_reranker_config():
+    """获取 Reranker 预处理配置"""
+    try:
+        preprocessor = get_preprocessor()
+        return jsonify({
+            'success': True,
+            'config': {
+                'enabled': preprocessor.enabled,
+                'top_ratio': preprocessor.top_ratio,
+                'has_api_key': bool(preprocessor.api_key)
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/get_default_config', methods=['GET'])
+def get_default_config():
+    """获取默认配置（从环境变量读取）"""
+    try:
+        from interview_graph_generator import InterviewGraphGenerator
+        return jsonify({
+            'success': True,
+            'config': {
+                'max_level2_nodes': InterviewGraphGenerator.DEFAULT_MAX_LEVEL2,
+                'max_level3_nodes': InterviewGraphGenerator.DEFAULT_MAX_LEVEL3,
+                'max_level4_nodes': InterviewGraphGenerator.DEFAULT_MAX_LEVEL4
+            }
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 @app.route('/api/upload', methods=['POST'])
 def upload_files():
