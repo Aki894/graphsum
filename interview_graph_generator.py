@@ -11,59 +11,14 @@ from text_preprocessor import preprocess_text, get_preprocessor
 # 加载环境变量
 load_dotenv()
 
-class InterviewGraphGenerator:
-    # 从环境变量读取默认节点数量上限
-    DEFAULT_MAX_LEVEL2 = int(os.getenv("DEFAULT_MAX_LEVEL2_NODES", "8"))
-    DEFAULT_MAX_LEVEL3 = int(os.getenv("DEFAULT_MAX_LEVEL3_NODES", "20"))
-    DEFAULT_MAX_LEVEL4 = int(os.getenv("DEFAULT_MAX_LEVEL4_NODES", "30"))
-    
+class PromptTemplates:
+    """Read and edit prompt templates without initializing a model client."""
+
     def __init__(self):
-        # 动态加载所有配置的服务商
-        self.providers = self._load_providers()
-        
-        # 读取流式输出终端显示配置
-        self.stream_to_terminal = os.getenv("STREAM_TO_TERMINAL", "true").lower() == "true"
-        
-        # 初始化日志记录器
-        init_logger(stream_to_terminal=self.stream_to_terminal)
-        
-        # 任务中断控制
-        self.current_task_id = None
-        self.cancel_callback = None
-        self.sse_callback = None  # SSE消息发送回调函数
-        
-        # 提示词配置
         self.prompts_file = os.path.join(os.path.dirname(__file__), 'prompts.json')
         self.prompts_config = self._load_prompts()
         self.current_prompt_template = self.prompts_config.get('current', 'default')
-        
-        # 根据默认provider初始化
-        self.current_provider = os.getenv("DEFAULT_PROVIDER", "openai")
-        if self.current_provider not in self.providers:
-            available = list(self.providers.keys())
-            if available:
-                self.current_provider = available[0]
-                log_warning(f"默认provider未配置，自动切换到: {self.current_provider}")
-            else:
-                raise ValueError("未配置任何API provider，请在.env中配置")
-        
-        self._init_api_client()
-    
-    def _load_providers(self):
-        """动态加载所有配置的服务商"""
-        providers = {}
-        # 扫描环境变量，找出所有 PROVIDER_XXX_API_KEY
-        for key, value in os.environ.items():
-            if key.startswith("PROVIDER_") and key.endswith("_API_KEY") and value:
-                # 提取服务商名称，如 PROVIDER_OPENAI_API_KEY -> openai
-                name = key.replace("PROVIDER_", "").replace("_API_KEY", "").lower()
-                providers[name] = {
-                    "api_key": value,
-                    "base_url": os.getenv(f"PROVIDER_{name.upper()}_BASE_URL", ""),
-                    "model": os.getenv(f"PROVIDER_{name.upper()}_MODEL", "")
-                }
-        return providers
-    
+
     def _load_prompts(self):
         """加载提示词配置"""
         try:
@@ -145,6 +100,57 @@ class InterviewGraphGenerator:
             log_info(f"已删除提示词模板: {template_name}")
             return True
         return False
+
+
+class InterviewGraphGenerator(PromptTemplates):
+    # 从环境变量读取默认节点数量上限
+    DEFAULT_MAX_LEVEL2 = int(os.getenv("DEFAULT_MAX_LEVEL2_NODES", "8"))
+    DEFAULT_MAX_LEVEL3 = int(os.getenv("DEFAULT_MAX_LEVEL3_NODES", "20"))
+    DEFAULT_MAX_LEVEL4 = int(os.getenv("DEFAULT_MAX_LEVEL4_NODES", "30"))
+
+    def __init__(self):
+        # 动态加载所有配置的服务商
+        self.providers = self._load_providers()
+
+        # 读取流式输出终端显示配置
+        self.stream_to_terminal = os.getenv("STREAM_TO_TERMINAL", "true").lower() == "true"
+
+        # 初始化日志记录器
+        init_logger(stream_to_terminal=self.stream_to_terminal)
+
+        # 任务中断控制
+        self.current_task_id = None
+        self.cancel_callback = None
+        self.sse_callback = None  # SSE消息发送回调函数
+
+        super().__init__()
+
+        # 根据默认provider初始化
+        self.current_provider = os.getenv("DEFAULT_PROVIDER", "openai")
+        if self.current_provider not in self.providers:
+            available = list(self.providers.keys())
+            if available:
+                self.current_provider = available[0]
+                log_warning(f"默认provider未配置，自动切换到: {self.current_provider}")
+            else:
+                raise ValueError("未配置任何API provider，请在.env中配置")
+
+        self._init_api_client()
+
+    def _load_providers(self):
+        """动态加载所有配置的服务商"""
+        providers = {}
+        # 扫描环境变量，找出所有 PROVIDER_XXX_API_KEY
+        for key, value in os.environ.items():
+            if key.startswith("PROVIDER_") and key.endswith("_API_KEY") and value:
+                # 提取服务商名称，如 PROVIDER_OPENAI_API_KEY -> openai
+                name = key.replace("PROVIDER_", "").replace("_API_KEY", "").lower()
+                providers[name] = {
+                    "api_key": value,
+                    "base_url": os.getenv(f"PROVIDER_{name.upper()}_BASE_URL", ""),
+                    "model": os.getenv(f"PROVIDER_{name.upper()}_MODEL", "")
+                }
+        return providers
     
     def _get_prompt(self, prompt_type, **kwargs):
         """获取格式化后的提示词

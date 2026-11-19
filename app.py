@@ -7,7 +7,7 @@ import threading
 import queue
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, Response
-from interview_graph_generator import InterviewGraphGenerator
+from interview_graph_generator import InterviewGraphGenerator, PromptTemplates
 from merge_graphs import GraphMerger
 from logger_config import init_logger, log_info, log_debug, log_warning, log_error, log_stream, log_stream_line
 from text_preprocessor import get_preprocessor
@@ -1347,9 +1347,9 @@ def test_provider():
 def get_prompts():
     """获取所有提示词模板"""
     try:
-        generator = InterviewGraphGenerator()
-        templates = generator.get_prompt_templates()
-        current = generator.get_current_prompt_template()
+        prompts = PromptTemplates()
+        templates = prompts.get_prompt_templates()
+        current = prompts.get_current_prompt_template()
         
         return jsonify({
             'success': True,
@@ -1363,9 +1363,9 @@ def get_prompts():
 def get_current_prompt():
     """获取当前使用的提示词模板"""
     try:
-        generator = InterviewGraphGenerator()
-        current = generator.get_current_prompt_template()
-        templates = generator.get_prompt_templates()
+        prompts = PromptTemplates()
+        current = prompts.get_current_prompt_template()
+        templates = prompts.get_prompt_templates()
         template_data = templates.get(current, {})
         
         return jsonify({
@@ -1386,8 +1386,8 @@ def switch_prompt():
         if not template_name:
             return jsonify({'success': False, 'message': '未指定模板名称'}), 400
         
-        generator = InterviewGraphGenerator()
-        generator.switch_prompt_template(template_name)
+        prompts = PromptTemplates()
+        prompts.switch_prompt_template(template_name)
         
         return jsonify({
             'success': True,
@@ -1418,8 +1418,8 @@ def save_prompt():
         if not template_data['extract_entities']:
             return jsonify({'success': False, 'message': '实体提取提示词不能为空'}), 400
         
-        generator = InterviewGraphGenerator()
-        generator.update_prompt_template(template_name, template_data)
+        prompts = PromptTemplates()
+        prompts.update_prompt_template(template_name, template_data)
         
         return jsonify({
             'success': True,
@@ -1438,8 +1438,8 @@ def delete_prompt():
         if not template_name:
             return jsonify({'success': False, 'message': '未指定模板名称'}), 400
         
-        generator = InterviewGraphGenerator()
-        result = generator.delete_prompt_template(template_name)
+        prompts = PromptTemplates()
+        result = prompts.delete_prompt_template(template_name)
         
         if result:
             return jsonify({
