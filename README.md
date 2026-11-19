@@ -87,6 +87,12 @@ PROVIDER_OPENAI_MODEL=gpt-4o-mini
 
 ## 代码导读
 
+- `templates/`：Flask 渲染的首页和图谱编辑器。
+- `static/`：浏览器加载的 CSS、JavaScript、字体和第三方前端组件。
+- `tests/`：单元测试。
+- `examples/`、`docs/screenshots/`：合成样例与界面截图。
+- `licenses/`：随仓分发的第三方许可证。
+
 | 模块 | 职责 |
 |---|---|
 | `app.py` | Flask 路由、任务线程、SSE、上传/合并/编辑器 API |

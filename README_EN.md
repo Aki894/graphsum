@@ -51,6 +51,14 @@ Everything lives in `.env` (gitignored). Provider format: `PROVIDER_{NAME}_API_K
 
 The `/editor` page edits graph JSON (nodes/edges/labels) and re-renders the PNG with one click — useful for manual coding corrections.
 
+## Project Layout
+
+- `templates/`: Flask-rendered home and graph editor pages.
+- `static/`: CSS, JavaScript, fonts, and bundled frontend components.
+- `tests/`: unit tests.
+- `examples/` and `docs/screenshots/`: synthetic samples and UI screenshots.
+- `licenses/`: licenses for bundled third-party components.
+
 ## Tests
 
 ```bash
