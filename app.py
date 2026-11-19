@@ -1,5 +1,7 @@
 import os
+import re
 import json
+import secrets
 import shutil
 import threading
 import queue
@@ -16,14 +18,25 @@ load_dotenv()
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'data'
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max file size
-app.config['SECRET_KEY'] = 'your-secret-key-here'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY') or secrets.token_hex(32)
 
 # 支持的文件格式
 SUPPORTED_EXTENSIONS = {'.docx', '.doc', '.txt', '.md', '.json', '.ass', '.srt'}
 
 def is_supported_file(filename):
-    """检查文件是否为支持的格式"""
+    """检查文件是否为支持的格式
+
+    说明：
+    - 普通 .json 作为输入是允许的
+    - 自动生成的图谱 JSON（如 *_graph.json、merged_graph*.json）需要排除，
+      避免在上传列表和批量生成子图时被当作新的源文件再次处理
+    """
     ext = os.path.splitext(filename)[1].lower()
+    if ext == '.json':
+        base = os.path.basename(filename)
+        # 排除自动生成的图谱 JSON 文件
+        if base.endswith('_graph.json') or base.startswith('merged_graph'):
+            return False
     return ext in SUPPORTED_EXTENSIONS
 
 def get_output_path(input_path):
@@ -187,6 +200,122 @@ def get_default_config():
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
+# ==================== 图谱编辑器 API ====================
+
+@app.route('/editor')
+def graph_editor():
+    """图谱编辑器页面"""
+    return render_template('graph_editor.html')
+
+@app.route('/api/list_graph_json', methods=['GET'])
+def list_graph_json():
+    """列出所有可编辑的图谱 JSON 文件"""
+    try:
+        graphs = []
+        data_dir = app.config['UPLOAD_FOLDER']
+        
+        # 查找所有 _graph.json 文件
+        for filename in os.listdir(data_dir):
+            if filename.endswith('_graph.json'):
+                filepath = os.path.join(data_dir, filename)
+                name = filename.replace('_graph.json', '')
+                
+                # 读取节点和边数量
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    node_count = len(data.get('nodes', []))
+                    edge_count = len(data.get('edges', []))
+                except:
+                    node_count = 0
+                    edge_count = 0
+                
+                graphs.append({
+                    'name': name,
+                    'filename': filename,
+                    'node_count': node_count,
+                    'edge_count': edge_count
+                })
+        
+        return jsonify({'success': True, 'graphs': graphs})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/get_graph_json/<name>', methods=['GET'])
+def get_graph_json(name):
+    """获取指定图谱的 JSON 数据"""
+    try:
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], f'{name}_graph.json')
+        
+        if not os.path.exists(filepath):
+            return jsonify({'success': False, 'message': '图谱不存在'}), 404
+        
+        with open(filepath, 'r', encoding='utf-8') as f:
+            graph_data = json.load(f)
+        
+        return jsonify({'success': True, 'graph': graph_data})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/save_graph_json', methods=['POST'])
+def save_graph_json():
+    """保存编辑后的图谱 JSON"""
+    try:
+        data = request.json
+        name = data.get('name')
+        graph_data = data.get('graph')
+        
+        if not name or not graph_data:
+            return jsonify({'success': False, 'message': '缺少必要参数'}), 400
+        
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], f'{name}_graph.json')
+        
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(graph_data, f, ensure_ascii=False, indent=2)
+        
+        log_info(f"[图谱编辑] 已保存: {name}")
+        return jsonify({'success': True, 'message': '保存成功'})
+    except Exception as e:
+        log_error(f"保存图谱失败: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/regenerate_graph_image', methods=['POST'])
+def regenerate_graph_image():
+    """根据 JSON 重新生成图谱图片"""
+    try:
+        import graph_layout
+        
+        data = request.json
+        name = data.get('name')
+        
+        if not name:
+            return jsonify({'success': False, 'message': '缺少图谱名称'}), 400
+        
+        json_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{name}_graph.json')
+        image_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{name}_graph.png')
+        
+        if not os.path.exists(json_path):
+            return jsonify({'success': False, 'message': '图谱 JSON 不存在'}), 404
+        
+        with open(json_path, 'r', encoding='utf-8') as f:
+            graph_data = json.load(f)
+        
+        nodes = graph_data.get('nodes', [])
+        edges = graph_data.get('edges', [])
+        
+        # 使用蝶形布局重新生成图片
+        graph_layout.draw_graph(nodes, edges, image_path, layout_mode='butterfly')
+        
+        log_info(f"[图谱编辑] 已重新生成图片: {name}")
+        return jsonify({
+            'success': True, 
+            'message': '图片已重新生成',
+            'image_path': f'/api/files/{name}_graph.png'
+        })
+    except Exception as e:
+        log_error(f"重新生成图片失败: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/api/upload', methods=['POST'])
 def upload_files():
     """批量上传文件（支持多种格式）"""
@@ -242,6 +371,45 @@ def clear_files():
     
     return jsonify({'success': True})
 
+@app.route('/api/delete_file', methods=['POST'])
+def delete_file():
+    """删除单个源文件及其派生图谱（PNG/JSON）
+
+    安全约束：仅允许 data 目录内的单层文件名，拒绝路径穿越；
+    merged_graph* 产物不允许通过此接口删除。
+    """
+    data = request.json or {}
+    filename = data.get('name', '')
+    if not filename:
+        return jsonify({'success': False, 'message': '未指定文件名'}), 400
+
+    # 只接受纯文件名，拒绝任何路径成分
+    if filename != os.path.basename(filename) or '..' in filename or '/' in filename or '\\' in filename:
+        return jsonify({'success': False, 'message': '非法文件名'}), 400
+    if filename.startswith('merged_graph'):
+        return jsonify({'success': False, 'message': '总图产物请通过重新生成覆盖'}), 400
+
+    data_folder = app.config['UPLOAD_FOLDER']
+    filepath = os.path.join(data_folder, filename)
+    if not os.path.isfile(filepath):
+        return jsonify({'success': False, 'message': '文件不存在'}), 404
+
+    removed = [filename]
+    try:
+        os.remove(filepath)
+        # 同步清理派生图谱，避免留下孤儿图
+        base = os.path.splitext(filename)[0]
+        for derived in (f'{base}_graph.png', f'{base}_graph.json'):
+            derived_path = os.path.join(data_folder, derived)
+            if os.path.isfile(derived_path):
+                os.remove(derived_path)
+                removed.append(derived)
+        log_info(f"[文件管理] 已删除: {', '.join(removed)}")
+        return jsonify({'success': True, 'removed': removed})
+    except Exception as e:
+        log_error(f"删除文件失败: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 @app.route('/api/list_files', methods=['GET'])
 def list_files():
     """列出data文件夹中的支持格式文件"""
@@ -281,13 +449,19 @@ def generate_subgraphs():
                 set_task_status(task_id, 'error', 0, 'data文件夹不存在')
                 return
             
-            # 查找所有支持格式的文件
+            # 查找所有支持格式的文件（仅处理尚未生成图谱的文件）
             input_files = []
+            skipped_files = []
             for file in os.listdir(data_folder):
                 if is_supported_file(file):
                     file_path = os.path.join(data_folder, file)
                     # 验证文件确实存在
                     if os.path.isfile(file_path):
+                        output_path = get_output_path(file_path)
+                        # 如果对应的图谱图片已经存在，则跳过该文件
+                        if os.path.exists(output_path):
+                            skipped_files.append(file)
+                            continue
                         input_files.append(file_path)
             
             total = len(input_files)
@@ -296,10 +470,21 @@ def generate_subgraphs():
                 all_files = os.listdir(data_folder)
                 file_list = ', '.join(all_files[:10])  # 只显示前10个
                 supported = ', '.join(SUPPORTED_EXTENSIONS)
-                set_task_status(task_id, 'error', 0, f'没有找到支持的文件（{supported}）。data文件夹中的文件: {file_list}...')
+                # 如果全部被跳过，额外提示原因
+                if skipped_files:
+                    skipped_preview = ', '.join(skipped_files[:5])
+                    msg = (f'所有支持的文件都已生成过图谱，本次无需处理。跳过 {len(skipped_files)} 个文件，例如: '
+                           f'{skipped_preview}。data 文件夹中的文件: {file_list}...')
+                else:
+                    msg = f'没有找到支持的文件（{supported}）。data文件夹中的文件: {file_list}...'
+                set_task_status(task_id, 'error', 0, msg)
                 return
-            
-            set_task_status(task_id, 'running', 0, f'找到 {total} 个文件，开始生成...')
+
+            # 记录本次要处理和被跳过的数量
+            skip_msg = f'[批量生成] 本次将处理 {total} 个新文件，跳过 {len(skipped_files)} 个已生成图谱的文件。'
+            log_info(skip_msg)
+            send_sse_message(task_id, skip_msg, 'log')
+            set_task_status(task_id, 'running', 0, f'找到 {total} 个待处理文件，开始生成...')
             
             # 打印节点上限配置
             config_msg = f"\n{'='*60}\n[配置信息] 节点数量上限设置:\n  第2层: {max_nodes.get('level2', '未设置')} 个节点\n  第3层: {max_nodes.get('level3', '未设置')} 个节点\n  第4层: {max_nodes.get('level4', '未设置')} 个节点\n{'='*60}\n"
@@ -348,7 +533,7 @@ def generate_subgraphs():
                     log_info(step2_msg)
                     send_sse_message(task_id, step2_msg, 'log')
                     set_task_status(task_id, 'running', base_progress + 10, f'[{i+1}/{total}] 正在调用AI提取实体...')
-                    graph_data = generator.extract_entities_with_glm(text, filename, max_nodes_config=max_nodes)
+                    graph_data = generator.extract_entities(text, filename, max_nodes_config=max_nodes)
                     
                     if graph_data and 'nodes' in graph_data:
                         level1_count = sum(1 for n in graph_data['nodes'] if n.get('level') == 1)
@@ -526,7 +711,7 @@ def regenerate_subgraph():
             log_info(step2_msg)
             send_sse_message(task_id, step2_msg, 'log')
             set_task_status(task_id, 'running', 30, '正在调用AI提取实体...')
-            graph_data = generator.extract_entities_with_glm(text, filename, max_nodes_config=max_nodes)
+            graph_data = generator.extract_entities(text, filename, max_nodes_config=max_nodes)
             
             if graph_data and 'nodes' in graph_data:
                 level1_count = sum(1 for n in graph_data['nodes'] if n.get('level') == 1)
@@ -938,7 +1123,10 @@ def switch_provider():
         
         # 切换provider
         generator.switch_api_provider(provider)
-        
+
+        # 同步当前进程环境变量，使切换立即生效（新任务会重新读取）
+        os.environ['DEFAULT_PROVIDER'] = provider
+
         # 更新 .env 文件中的默认provider
         env_path = os.path.join(os.path.dirname(__file__), ".env")
         if os.path.exists(env_path):
@@ -978,6 +1166,174 @@ def get_current_provider():
         })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
+
+# ==================== API 服务商管理 ====================
+
+def _env_file_path():
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+
+def _scan_providers():
+    """从环境变量扫描全部服务商配置（不实例化生成器，零配置时也可管理）"""
+    providers = {}
+    for key, value in os.environ.items():
+        if key.startswith('PROVIDER_') and key.endswith('_API_KEY') and value:
+            name = key[len('PROVIDER_'):-len('_API_KEY')].lower()
+            providers[name] = {
+                'name': name,
+                'api_key': value,
+                'base_url': os.getenv(f'PROVIDER_{name.upper()}_BASE_URL', ''),
+                'model': os.getenv(f'PROVIDER_{name.upper()}_MODEL', '')
+            }
+    return providers
+
+def _mask_key(key):
+    """密钥脱敏：仅保留首尾少量字符用于辨识"""
+    if not key:
+        return ''
+    if len(key) <= 10:
+        return '••••••••'
+    return key[:5] + '••••••••' + key[-4:]
+
+def _update_env_file(updates, removals=()):
+    """更新 .env 中的键（保留注释与其他行），并同步当前进程环境变量"""
+    path = _env_file_path()
+    lines = []
+    if os.path.exists(path):
+        with open(path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+    removals = set(removals)
+    seen = set()
+    out = []
+    for line in lines:
+        stripped = line.lstrip()
+        key = line.split('=', 1)[0].strip() if ('=' in line and not stripped.startswith('#')) else None
+        if key and key in removals:
+            continue
+        if key and key in updates:
+            out.append(f'{key}={updates[key]}\n')
+            seen.add(key)
+        else:
+            out.append(line)
+    for k, v in updates.items():
+        if k not in seen:
+            if out and not out[-1].endswith('\n'):
+                out.append('\n')
+            out.append(f'{k}={v}\n')
+    with open(path, 'w', encoding='utf-8') as f:
+        f.writelines(out)
+    for k in removals:
+        os.environ.pop(k, None)
+    for k, v in updates.items():
+        os.environ[k] = str(v)
+
+@app.route('/api/providers', methods=['GET'])
+def list_providers():
+    """列出全部服务商（密钥脱敏，绝不返回完整密钥）"""
+    try:
+        providers = _scan_providers()
+        current = os.getenv('DEFAULT_PROVIDER', '')
+        return jsonify({
+            'success': True,
+            'current_provider': current,
+            'providers': [{
+                'name': p['name'],
+                'base_url': p['base_url'],
+                'model': p['model'],
+                'key_masked': _mask_key(p['api_key']),
+                'active': p['name'] == current
+            } for p in sorted(providers.values(), key=lambda x: x['name'])]
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/providers', methods=['POST'])
+def save_provider():
+    """新增或更新服务商，写入 .env 并立即生效"""
+    try:
+        data = request.json or {}
+        name = (data.get('name') or '').strip().lower()
+        base_url = (data.get('base_url') or '').strip()
+        model = (data.get('model') or '').strip()
+        api_key = (data.get('api_key') or '').strip()
+
+        if not re.fullmatch(r'[a-z][a-z0-9_]{0,30}', name):
+            return jsonify({'success': False, 'message': '名称须为小写字母开头，仅含小写字母 / 数字 / 下划线（≤31 字符）'}), 400
+        if not base_url or not re.match(r'^https?://', base_url):
+            return jsonify({'success': False, 'message': '请填写以 http(s):// 开头的接口地址'}), 400
+        if not model:
+            return jsonify({'success': False, 'message': '请填写模型名称'}), 400
+
+        existing = _scan_providers().get(name)
+        if not api_key and not existing:
+            return jsonify({'success': False, 'message': '新增服务商必须填写 API 密钥'}), 400
+
+        upper = name.upper()
+        updates = {
+            f'PROVIDER_{upper}_BASE_URL': base_url,
+            f'PROVIDER_{upper}_MODEL': model
+        }
+        if api_key:
+            updates[f'PROVIDER_{upper}_API_KEY'] = api_key
+
+        # 若当前没有可用的默认服务商，则自动启用本次保存的服务商
+        after = _scan_providers()
+        after[name] = {'api_key': api_key or (existing or {}).get('api_key', '')}
+        current = os.getenv('DEFAULT_PROVIDER', '')
+        if current not in after or not after.get(current, {}).get('api_key'):
+            updates['DEFAULT_PROVIDER'] = name
+
+        _update_env_file(updates)
+        log_info(f"[服务商] 已保存服务商配置: {name} (model: {model})")
+        return jsonify({'success': True, 'message': f'服务商 {name} 已保存', 'name': name})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/providers/delete', methods=['POST'])
+def delete_provider():
+    """删除服务商配置；若为当前默认则自动切换到其余可用服务商"""
+    try:
+        data = request.json or {}
+        name = (data.get('name') or '').strip().lower()
+        providers = _scan_providers()
+        if name not in providers:
+            return jsonify({'success': False, 'message': f'服务商不存在: {name}'}), 404
+
+        upper = name.upper()
+        removals = [f'PROVIDER_{upper}_API_KEY', f'PROVIDER_{upper}_BASE_URL', f'PROVIDER_{upper}_MODEL']
+        updates = {}
+        if os.getenv('DEFAULT_PROVIDER', '') == name:
+            remaining = [p for p in providers if p != name]
+            updates['DEFAULT_PROVIDER'] = remaining[0] if remaining else ''
+        _update_env_file(updates, removals)
+        log_info(f"[服务商] 已删除服务商配置: {name}")
+        return jsonify({'success': True, 'message': f'服务商 {name} 已删除', 'current_provider': os.getenv('DEFAULT_PROVIDER', '')})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/providers/test', methods=['POST'])
+def test_provider():
+    """测试服务商连通性：用给定（或已保存的）配置发起一次最小对话请求"""
+    try:
+        data = request.json or {}
+        name = (data.get('name') or '').strip().lower()
+        saved = _scan_providers().get(name, {})
+        api_key = (data.get('api_key') or '').strip() or saved.get('api_key', '')
+        base_url = (data.get('base_url') or '').strip() or saved.get('base_url', '')
+        model = (data.get('model') or '').strip() or saved.get('model', '')
+        if not api_key or not base_url or not model:
+            return jsonify({'success': False, 'message': '缺少密钥 / 接口地址 / 模型，无法测试'})
+
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key, base_url=base_url, timeout=25, max_retries=0)
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[{'role': 'user', 'content': '请只回复两个字：正常'}],
+            max_tokens=10, temperature=0
+        )
+        reply = (resp.choices[0].message.content or '').strip() if resp.choices else ''
+        return jsonify({'success': True, 'message': '连接成功', 'reply': reply[:60], 'model': model})
+    except Exception as e:
+        return jsonify({'success': False, 'message': f'连接失败：{str(e)[:300]}'})
 
 # ==================== 提示词管理 API ====================
 
@@ -1109,5 +1465,5 @@ if __name__ == '__main__':
     # print(f"网络访问地址: http://0.0.0.0:5001")
     # print("="*60 + "\n")
     
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    app.run(debug=os.getenv('FLASK_DEBUG', 'false').lower() == 'true', host='127.0.0.1', port=5001)
 

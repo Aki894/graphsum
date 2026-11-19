@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图谱编辑器 — GRAPHSUM</title>
+<link rel="stylesheet" href="/static/css/graphsum.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23fff'/%3E%3Crect x='3' y='3' width='10' height='10' fill='%23ff0000'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<div class="ed-shell">
+
+  <!-- ══════════ 瑞士顶栏 ══════════ -->
+  <header class="ed-head">
+    <button class="btn-inline btn-inline--sm mobile-only side-toggle" id="sideToggle" aria-label="图谱索引">≡</button>
+    <a class="btn-inline btn-inline--sm" href="/">← 工作台</a>
+    <a class="brand" href="/" style="font-size:15px"><span class="sq"></span>GRAPHSUM<small>EDITOR</small></a>
+    <span class="gname" id="edGraphName">未选择图纸</span>
+    <span class="unsaved" id="unsavedFlag"><i></i>未保存</span>
+    <span class="sp">
+      <button class="btn-inline btn-inline--sm mobile-only inspect-toggle" id="inspectToggle" aria-label="检查器">◧</button>
+      <button class="btn-inline" id="exportBtn">导出图片</button>
+      <button class="btn-block" id="saveBtn" style="padding:10px 22px">保存</button>
+    </span>
+  </header>
+
+  <div class="ed-main">
+
+    <!-- ══════════ 左侧：图纸索引（瑞士） ══════════ -->
+    <aside class="ed-side bp-scroll" id="edSide">
+      <div class="side-sec">
+        <div class="sec-label" style="margin-bottom:12px"><span class="no">E—01</span><span class="dash"></span><span class="ttl">图纸索引</span></div>
+        <div class="rows" id="graphList"><div class="empty" style="border:none;padding:16px 0">加载中…</div></div>
+      </div>
+      <div class="side-sec">
+        <div class="sec-label" style="margin-bottom:12px"><span class="no">E—02</span><span class="dash"></span><span class="ttl">快捷键</span></div>
+        <table class="keys">
+          <tr><td>添加节点</td><td><kbd>双击空白</kbd></td></tr>
+          <tr><td>编辑节点</td><td><kbd>双击节点</kbd></td></tr>
+          <tr><td>删除选中</td><td><kbd>Delete</kbd></td></tr>
+          <tr><td>连线模式</td><td><kbd>C</kbd></td></tr>
+          <tr><td>撤销 / 重做</td><td><kbd>Ctrl+Z</kbd> <kbd>Ctrl+Y</kbd></td></tr>
+          <tr><td>保存</td><td><kbd>Ctrl+S</kbd></td></tr>
+          <tr><td>退出连线</td><td><kbd>Esc</kbd></td></tr>
+        </table>
+      </div>
+      <div class="side-sec">
+        <div class="sec-label" style="margin-bottom:12px"><span class="no">E—03</span><span class="dash"></span><span class="ttl">层级图例</span></div>
+        <div class="legend-sw" id="legendSw"></div>
+      </div>
+      <div class="side-sec" style="border-bottom:none;margin-top:auto">
+        <div class="mono" style="font-size:10px;letter-spacing:.12em;color:var(--mute);line-height:1.9">
+          DRAWING RULES<br>
+          · 单父节点树结构<br>
+          · 连线方向 L1→L2→L3→L4<br>
+          · 坐标随保存写入 JSON
+        </div>
+      </div>
+    </aside>
+
+    <!-- ══════════ 中央：蓝图制图台 ══════════ -->
+    <div class="ed-center">
+      <div class="ed-toolbar">
+        <div class="grp">
+          <button class="btn-tool" id="addNodeBtn">+ 节点</button>
+          <button class="btn-tool" id="connectBtn">连线</button>
+          <button class="btn-tool btn-tool--danger" id="deleteBtn">删除选中</button>
+        </div>
+        <span class="sep"></span>
+        <div class="grp">
+          <span class="lbl">布局</span>
+          <select class="field" id="layoutSelect" style="padding:6px 30px 6px 10px;font-size:11px" aria-label="布局">
+            <option value="butterfly">蝶形</option>
+            <option value="hierarchical">层级</option>
+            <option value="force">力导向</option>
+          </select>
+          <button class="btn-tool" id="zoomOutBtn" aria-label="缩小">−</button>
+          <button class="btn-tool" id="zoomInBtn" aria-label="放大">+</button>
+          <button class="btn-tool" id="fitBtn">适应</button>
+        </div>
+        <span class="sep"></span>
+        <div class="grp">
+          <button class="btn-tool" id="undoBtn">↩ 撤销</button>
+          <button class="btn-tool" id="redoBtn">↪ 重做</button>
+        </div>
+        <span class="sep"></span>
+        <div class="grp">
+          <button class="btn-tool on" id="gridBtn">网格</button>
+          <button class="btn-tool on" id="labelsBtn">标签</button>
+        </div>
+      </div>
+
+      <div class="ed-stage paper-bed" id="edStage">
+        <div class="ed-canvas" id="edCanvas"></div>
+        <div class="ed-fig" id="edFig">FIG. E1 — <span class="orange">STANDBY</span> · 请选择图纸</div>
+        <div class="ed-connect-hint" id="connectHint">连线模式 · 点击父节点 → 点击子节点 · ESC 退出</div>
+      </div>
+
+      <div class="ed-status">
+        <span>X <span class="orange" id="stX">0</span> · Y <span class="orange" id="stY">0</span></span>
+        <span>SCALE <span id="stScale">100%</span></span>
+        <span>N <span id="stNodes">0</span> · E <span id="stEdges">0</span></span>
+        <span id="stLayout">BUTTERFLY</span>
+        <span class="sp" id="stSave">READY</span>
+      </div>
+    </div>
+
+    <!-- ══════════ 右侧：检查器（描图纸） ══════════ -->
+    <aside class="ed-inspect" id="edInspect">
+      <div class="sec-ttl">节点检查器 / INSPECTOR</div>
+      <div id="inspectBody">
+        <div class="ed-empty-note">
+          未选中对象。<br><br>
+          · 单击节点 / 连线进行检查<br>
+          · 双击节点编辑标签与层级<br>
+          · 双击空白处添加节点<br>
+          · 拖拽节点调整坐标
+        </div>
+      </div>
+      <div class="sec-ttl">图纸信息 / SHEET</div>
+      <div id="sheetInfo"></div>
+    </aside>
+
+  </div>
+</div>
+
+<!-- ══════════ 导出预览模态 ══════════ -->
+<div class="modal" id="exportModal" role="dialog" aria-modal="true" aria-label="导出预览">
+  <div class="modal-box modal-box--wide">
+    <button class="modal-x" id="exportModalX" aria-label="关闭">×</button>
+    <div class="m-kicker"><span class="no">EXP—01</span><span class="dash"></span><span class="label">PRINT EXPORT</span></div>
+    <h3>印刷版已重新生成</h3>
+    <div class="m-body mono" style="font-size:13px" id="exportMeta">—</div>
+    <div style="border:1px solid var(--ink);max-height:56vh;overflow:auto;margin-bottom:24px;background:var(--ground)">
+      <img id="exportImg" alt="重新生成的图谱图片" style="display:block;width:100%;height:auto">
+    </div>
+    <div class="m-acts">
+      <button class="btn-inline" id="exportClose">关闭</button>
+      <span class="sp"></span>
+      <button class="btn-block" id="exportDl" style="padding:10px 20px">下载 PNG <span class="arrow">↓</span></button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/vendor/vis-network.min.js"></script>
+<script src="/static/js/core.js"></script>
+<script src="/static/js/blueprint.js"></script>
+<script>
+'use strict';
+const { api, escapeHtml, pad2, toast, confirm: confirmDialog, download } = gs;
+const BG = window.BlueprintGraph;
+
+/* ══════════ 状态 ══════════ */
+let bg = null;
+let currentName = null;
+let dirty = false;
+let connectMode = false;
+let connectFrom = null;
+let lastSavedAt = null;
+
+const $ = id => document.getElementById(id);
+
+/* 图例 */
+$('legendSw').innerHTML = Object.keys(BG.LEVEL_COLORS).map(lv =>
+  `<span class="li"><span class="sw" style="background:${BG.LEVEL_COLORS[lv]}"></span>${BG.LEVEL_NAMES[lv]}</span>`
+).join('');
+
+/* ══════════ 初始化画布 ══════════ */
+bg = new BG.BlueprintGraph($('edCanvas'), { editor: true });
+
+bg.on('doubleClick', p => {
+  if (p.nodes.length) {
+    bg.selectNode(p.nodes[0]);
+    refreshInspector();
+    const inp = $('insLabel');
+    if (inp) { inp.focus(); inp.select(); }
+  } else if (currentName) {
+    const id = bg.addNodeAt(p.pointer.canvas.x, p.pointer.canvas.y);
+    markDirty();
+    bg.selectNode(id);
+    refreshInspector();
+    const inp = $('insLabel');
+    if (inp) { inp.focus(); inp.select(); }
+    updateCounts();
+  }
+});
+
+bg.on('click', p => {
+  if (!connectMode) return;
+  if (!p.nodes.length) { connectFrom = null; return; }
+  const id = p.nodes[0];
+  if (!connectFrom) {
+    connectFrom = id;
+    $('connectHint').textContent = `连线模式 · 父节点已选「${bg.nodes.get(id).label || id}」→ 点击子节点 · ESC 退出`;
+    return;
+  }
+  const from = connectFrom;
+  connectFrom = null;
+  $('connectHint').textContent = '连线模式 · 点击父节点 → 点击子节点 · ESC 退出';
+  tryConnect(from, id);
+});
+
+async function tryConnect(from, to) {
+  let res = bg.addEdge(from, to);
+  if (!res.ok && res.reason === 'has-parent') {
+    const parentNode = bg.nodes.get(res.parentId);
+    const ok = await confirmDialog({
+      title: '替换父节点', kicker: 'EDIT—LINK', okLabel: '替换连线',
+      body: `「${bg.nodes.get(to).label || to}」已连接到「${parentNode ? parentNode.label : res.parentId}」。树结构要求单父节点，是否替换为新连线？`
+    });
+    if (!ok) return;
+    res = bg.addEdge(from, to, { replaceParent: true });
+  }
+  if (res.ok) {
+    markDirty(); updateCounts();
+    toast(res.replaced ? '已替换父连线' : '连线已添加', 'ok');
+  } else {
+    toast('无法连线：' + res.reason, 'err');
+  }
+}
+
+bg.on('selectNode', refreshInspector);
+bg.on('deselectNode', refreshInspector);
+bg.on('selectEdge', refreshInspector);
+bg.on('deselectEdge', refreshInspector);
+bg.on('dragEnd', p => { if (p.nodes && p.nodes.length) { markDirty(); } });
+/* vis-network 无 mousemove 事件：用 DOM 监听 + DOMtoCanvas 换算坐标 */
+$('edCanvas').addEventListener('mousemove', e => {
+  const rect = $('edCanvas').getBoundingClientRect();
+  const pos = bg.network.DOMtoCanvas({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  $('stX').textContent = Math.round(pos.x);
+  $('stY').textContent = Math.round(pos.y);
+});
+function syncScale() { $('stScale').textContent = Math.round(bg.getScale() * 100) + '%'; }
+bg.on('zoom', syncScale);
+bg.on('animationFinished', syncScale);
+
+/* ══════════ 图纸索引 ══════════ */
+async function loadGraphList() {
+  const host = $('graphList');
+  try {
+    const data = await api('/api/list_graph_json');
+    const graphs = data.graphs || [];
+    if (!graphs.length) {
+      host.innerHTML = '<div class="empty" style="border:none;padding:16px 0"><div class="big" style="font-size:15px">暂无图纸</div>请先在工作台生成子图。</div>';
+      return;
+    }
+    host.innerHTML = graphs.map((g, i) => `
+      <div class="row" data-name="${escapeHtml(g.name)}" role="button" tabindex="0">
+        <span class="idx">${pad2(i + 1)}</span>
+        <div class="main">
+          <div class="name" title="${escapeHtml(g.name)}">${escapeHtml(g.name)}</div>
+          <div class="meta"><span>N ${g.node_count}</span><span>E ${g.edge_count}</span></div>
+        </div>
+      </div>`).join('');
+    host.querySelectorAll('.row').forEach(row => {
+      const go = () => loadGraph(row.dataset.name);
+      row.addEventListener('click', go);
+      row.addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+    });
+  } catch (e) {
+    host.innerHTML = '<div class="empty" style="border:none">索引加载失败</div>';
+  }
+}
+
+async function loadGraph(name) {
+  if (dirty && currentName && currentName !== name) {
+    const ok = await confirmDialog({
+      title: '放弃未保存修改', kicker: 'EDIT—LOAD', danger: true, okLabel: '放弃并加载',
+      body: `「${currentName}」有未保存的修改，切换图纸将丢失这些修改。`
+    });
+    if (!ok) return;
+  }
+  try {
+    const data = await api(`/api/get_graph_json/${encodeURIComponent(name)}`);
+    if (!data.success) { toast('加载失败：' + (data.message || ''), 'err'); return; }
+    currentName = name;
+    bg.load(data.graph);
+    const hasPos = (data.graph.nodes || []).some(n => n.x != null && n.y != null);
+    if (!hasPos) {
+      bg.applyLayout($('layoutSelect').value, { fit: true });
+    } else {
+      bg.layoutMode = 'saved';
+      $('stLayout').textContent = 'SAVED POSITIONS';
+    }
+    setDirty(false);
+    exitConnect();
+    document.querySelectorAll('#graphList .row').forEach(r => r.classList.toggle('active', r.dataset.name === name));
+    $('edGraphName').textContent = name;
+    $('edFig').innerHTML = `FIG. E1 — <span class="orange">${escapeHtml(name.toUpperCase())}</span> · ${hasPos ? 'SAVED' : $('layoutSelect').value.toUpperCase()}`;
+    $('stSave').textContent = 'LOADED';
+    updateCounts(); refreshInspector(); refreshSheetInfo();
+    $('edSide').classList.remove('mobile-open');
+  } catch (e) { toast('加载失败：' + e.message, 'err'); }
+}
+
+/* ══════════ 检查器 ══════════ */
+function refreshInspector() {
+  const host = $('inspectBody');
+  const sel = bg.getSelection();
+  if (sel.nodes.length === 1) {
+    const n = bg.nodes.get(sel.nodes[0]);
+    host.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div><label class="field-label" for="insLabel">标签 / LABEL</label>
+          <input class="field" id="insLabel" value="${escapeHtml(n._origLabel || n.label || '')}"></div>
+        <div><label class="field-label" for="insLevel">层级 / LEVEL</label>
+          <select class="field" id="insLevel">
+            ${[1, 2, 3, 4].map(l => `<option value="${l}" ${n.level == l ? 'selected' : ''}>${BG.LEVEL_NAMES[l]}</option>`).join('')}
+          </select></div>
+        <div><label class="field-label" for="insCategory">分类 / CATEGORY</label>
+          <input class="field" id="insCategory" value="${escapeHtml(n.category || '')}" placeholder="如 核心话题"></div>
+        <div class="kv"><span>ID</span><span class="v" style="font-size:10px;word-break:break-all">${escapeHtml(n.id)}</span></div>
+        <div class="kv"><span>坐标</span><span class="v">${Math.round(n.x || 0)}, ${Math.round(n.y || 0)}</span></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn-tool btn-tool--solid" id="insApply">应用修改</button>
+          <button class="btn-tool btn-tool--danger" id="insDelete">删除节点</button>
+        </div>
+      </div>`;
+    $('insApply').addEventListener('click', () => applyNodeEdit(n.id));
+    $('insDelete').addEventListener('click', () => deleteSelection());
+    $('insLabel').addEventListener('keydown', e => { if (e.key === 'Enter') applyNodeEdit(n.id); });
+  } else if (sel.nodes.length > 1) {
+    host.innerHTML = `<div class="ed-empty-note">已选中 ${sel.nodes.length} 个节点。<br>按 DELETE 批量删除（关联边一并移除）。</div>
+      <button class="btn-tool btn-tool--danger" id="insDelete" style="margin-top:12px">删除选中</button>`;
+    $('insDelete').addEventListener('click', () => deleteSelection());
+  } else if (sel.edges.length) {
+    const e = bg.edges.get(sel.edges[0]);
+    const a = bg.nodes.get(e.from), b = bg.nodes.get(e.to);
+    host.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <div class="kv"><span>父节点</span><span class="v">${escapeHtml(a ? (a._origLabel || a.label) : e.from)}</span></div>
+        <div class="kv"><span>子节点</span><span class="v">${escapeHtml(b ? (b._origLabel || b.label) : e.to)}</span></div>
+        <div class="kv"><span>类型</span><span class="v">层级 · 次级</span></div>
+        <button class="btn-tool btn-tool--danger" id="insEdgeDel">删除连线</button>
+      </div>`;
+    $('insEdgeDel').addEventListener('click', () => deleteSelection());
+  } else {
+    host.innerHTML = `<div class="ed-empty-note">
+      未选中对象。<br><br>
+      · 单击节点 / 连线进行检查<br>
+      · 双击节点编辑标签与层级<br>
+      · 双击空白处添加节点<br>
+      · 拖拽节点调整坐标<br>
+      · 滚轮以鼠标为中心缩放<br>
+      · 右键拖拽平移画布
+    </div>`;
+  }
+}
+
+function applyNodeEdit(id) {
+  const label = $('insLabel').value.trim();
+  const level = parseInt($('insLevel').value, 10);
+  const category = $('insCategory').value.trim();
+  if (!label) { toast('节点标签不能为空', 'err'); return; }
+  bg.updateNode(id, { label, level, category });
+  markDirty(); updateCounts(); refreshSheetInfo(); refreshInspector();
+  toast('节点已更新', 'ok');
+}
+
+function refreshSheetInfo() {
+  const h = bg.levelHistogram();
+  const max = Math.max(1, ...Object.values(h));
+  const c = bg.counts();
+  $('sheetInfo').innerHTML = `
+    <div class="kv"><span>图纸</span><span class="v">${escapeHtml(currentName || '—')}</span></div>
+    <div class="kv"><span>节点 / 边</span><span class="v">${c.nodes} / ${c.edges}</span></div>
+    <div class="kv"><span>布局</span><span class="v">${$('layoutSelect').value.toUpperCase()}</span></div>
+    <div style="margin-top:12px">
+      ${[1, 2, 3, 4].map(l => `<div class="lvl-bar"><span style="width:20px;color:${BG.LEVEL_COLORS[l]}">L${l}</span><span class="bar" style="width:${Math.round(h[l] / max * 120)}px;background:${BG.LEVEL_COLORS[l]}"></span><span>${h[l]}</span></div>`).join('')}
+    </div>`;
+}
+
+function updateCounts() {
+  const c = bg.counts();
+  $('stNodes').textContent = c.nodes;
+  $('stEdges').textContent = c.edges;
+}
+
+/* ══════════ 脏标记 ══════════ */
+function markDirty() { setDirty(true); }
+function setDirty(v) {
+  dirty = v;
+  $('unsavedFlag').classList.toggle('show', v);
+  if (v) $('stSave').textContent = 'MODIFIED';
+}
+window.addEventListener('beforeunload', e => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ══════════ 工具栏 ══════════ */
+$('addNodeBtn').addEventListener('click', () => {
+  if (!currentName) { toast('请先选择一张图纸', 'info'); return; }
+  const center = bg.network.getViewPosition();
+  const id = bg.addNodeAt(center.x, center.y);
+  markDirty(); bg.selectNode(id); refreshInspector(); updateCounts();
+  const inp = $('insLabel'); if (inp) { inp.focus(); inp.select(); }
+});
+
+function exitConnect() {
+  connectMode = false; connectFrom = null;
+  $('connectBtn').classList.remove('on');
+  $('connectHint').classList.remove('show');
+}
+$('connectBtn').addEventListener('click', () => {
+  if (!currentName) { toast('请先选择一张图纸', 'info'); return; }
+  connectMode = !connectMode;
+  connectFrom = null;
+  $('connectBtn').classList.toggle('on', connectMode);
+  $('connectHint').classList.toggle('show', connectMode);
+  $('connectHint').textContent = '连线模式 · 点击父节点 → 点击子节点 · ESC 退出';
+});
+
+async function deleteSelection() {
+  const sel = bg.getSelection();
+  if (!sel.nodes.length && !sel.edges.length) { toast('请先选择要删除的节点或连线', 'info'); return; }
+  const ok = await confirmDialog({
+    title: '删除选中', kicker: 'EDIT—DEL', danger: true, okLabel: '删除',
+    body: `将删除 ${sel.nodes.length} 个节点与 ${sel.edges.length} 条连线（节点的关联边一并移除）。可用 Ctrl+Z 撤销。`
+  });
+  if (!ok) return;
+  const n = bg.removeSelection();
+  markDirty(); updateCounts(); refreshInspector(); refreshSheetInfo();
+  toast(`已删除 ${n} 个对象`, 'ok');
+}
+$('deleteBtn').addEventListener('click', deleteSelection);
+
+$('layoutSelect').addEventListener('change', function () {
+  bg.applyLayout(this.value);
+  markDirty();
+  $('stLayout').textContent = this.value.toUpperCase();
+  if (currentName) $('edFig').innerHTML = `FIG. E1 — <span class="orange">${escapeHtml(currentName.toUpperCase())}</span> · ${this.value.toUpperCase()}`;
+});
+$('zoomInBtn').addEventListener('click', () => bg.zoomBy(1.25));
+$('zoomOutBtn').addEventListener('click', () => bg.zoomBy(0.8));
+$('fitBtn').addEventListener('click', () => bg.fit());
+$('undoBtn').addEventListener('click', () => { if (bg.undo()) { markDirty(); updateCounts(); refreshInspector(); refreshSheetInfo(); } });
+$('redoBtn').addEventListener('click', () => { if (bg.redo()) { markDirty(); updateCounts(); refreshInspector(); refreshSheetInfo(); } });
+$('gridBtn').addEventListener('click', function () {
+  const off = $('edStage').classList.toggle('grid-off');
+  this.classList.toggle('on', !off);
+});
+$('labelsBtn').addEventListener('click', function () {
+  bg.setLabels(!bg.labelsVisible);
+  this.classList.toggle('on', bg.labelsVisible);
+});
+
+/* 移动端面板开关 */
+$('sideToggle').addEventListener('click', () => $('edSide').classList.toggle('mobile-open'));
+$('inspectToggle').addEventListener('click', () => $('edInspect').classList.toggle('mobile-open'));
+
+/* ══════════ 保存 / 导出 ══════════ */
+async function saveGraph({ silent = false } = {}) {
+  if (!currentName) { if (!silent) toast('请先选择一张图纸', 'info'); return false; }
+  try {
+    const res = await api('/api/save_graph_json', { method: 'POST', body: { name: currentName, graph: bg.toGraphData() } });
+    if (!res.success) { toast('保存失败：' + (res.message || ''), 'err'); return false; }
+    setDirty(false);
+    lastSavedAt = new Date();
+    const t = [lastSavedAt.getHours(), lastSavedAt.getMinutes(), lastSavedAt.getSeconds()].map(x => String(x).padStart(2, '0')).join(':');
+    $('stSave').textContent = 'SAVED ' + t;
+    if (!silent) toast(`图纸「${currentName}」已保存`, 'ok');
+    return true;
+  } catch (e) { toast('保存失败：' + e.message, 'err'); return false; }
+}
+$('saveBtn').addEventListener('click', () => saveGraph());
+
+$('exportBtn').addEventListener('click', async () => {
+  if (!currentName) { toast('请先选择一张图纸', 'info'); return; }
+  const saved = await saveGraph({ silent: true });
+  if (!saved) return;
+  $('exportBtn').disabled = true;
+  try {
+    const res = await api('/api/regenerate_graph_image', { method: 'POST', body: { name: currentName } });
+    if (!res.success) { toast('导出失败：' + (res.message || ''), 'err'); return; }
+    const url = res.image_path + '?t=' + Date.now();
+    $('exportImg').src = url;
+    $('exportMeta').textContent = `${currentName}_graph.png · 蝶形布局印刷版 · 已按当前 JSON 重新绘制`;
+    $('exportDl').onclick = () => download(res.image_path, currentName + '_graph.png');
+    $('exportModal').classList.add('open');
+    toast('印刷版图片已重新生成', 'ok');
+  } catch (e) { toast('导出失败：' + e.message, 'err'); }
+  finally { $('exportBtn').disabled = false; }
+});
+function closeExport() { $('exportModal').classList.remove('open'); }
+$('exportModalX').addEventListener('click', closeExport);
+$('exportClose').addEventListener('click', closeExport);
+$('exportModal').addEventListener('click', e => { if (e.target === $('exportModal')) closeExport(); });
+
+/* ══════════ 键盘 ══════════ */
+document.addEventListener('keydown', e => {
+  const tag = e.target.tagName;
+  const typing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  if (e.key === 'Escape') {
+    if ($('exportModal').classList.contains('open')) { closeExport(); return; }
+    exitConnect();
+    return;
+  }
+  if (typing) return;
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelection(); }
+  if (e.key === 'c' || e.key === 'C') { $('connectBtn').click(); }
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === 'z') { e.preventDefault(); $('undoBtn').click(); }
+    else if (e.key === 'y') { e.preventDefault(); $('redoBtn').click(); }
+    else if (e.key === 's') { e.preventDefault(); saveGraph(); }
+  }
+});
+
+/* ══════════ 启动 ══════════ */
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadGraphList();
+  refreshSheetInfo();
+  const name = new URLSearchParams(location.search).get('graph');
+  if (name) loadGraph(name);
+});
+</script>
+</body>
+</html>

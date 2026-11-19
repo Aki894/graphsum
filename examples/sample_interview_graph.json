@@ -1,0 +1,549 @@
+{
+  "nodes": [
+    {
+      "id": "root",
+      "label": "社区养老服务",
+      "level": 1,
+      "category": "主题"
+    },
+    {
+      "id": "c1",
+      "label": "服务态度",
+      "level": 2,
+      "category": "态度"
+    },
+    {
+      "id": "c2",
+      "label": "餐饮服务",
+      "level": 2,
+      "category": "餐饮"
+    },
+    {
+      "id": "c3",
+      "label": "活动设施",
+      "level": 2,
+      "category": "设施"
+    },
+    {
+      "id": "c4",
+      "label": "管理流程",
+      "level": 2,
+      "category": "管理"
+    },
+    {
+      "id": "c5",
+      "label": "情感体验",
+      "level": 2,
+      "category": "体验"
+    },
+    {
+      "id": "c6",
+      "label": "参与意愿",
+      "level": 2,
+      "category": "意愿"
+    },
+    {
+      "id": "p1",
+      "label": "态度热情",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "p2",
+      "label": "处理细致",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "p3",
+      "label": "响应及时",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "p4",
+      "label": "口味偏咸",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "p5",
+      "label": "菜品重复",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "p6",
+      "label": "环境整洁",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "p7",
+      "label": "布局合理",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "p8",
+      "label": "位置不足",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "p9",
+      "label": "器材老旧",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "p10",
+      "label": "流程繁琐",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "p11",
+      "label": "制度规范",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "p12",
+      "label": "建立信任",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "p13",
+      "label": "心存感激",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "p14",
+      "label": "主动推荐",
+      "level": 3,
+      "category": "表现"
+    },
+    {
+      "id": "d1",
+      "label": "主动招呼",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d2",
+      "label": "耐心解答",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d3",
+      "label": "列出清单",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d4",
+      "label": "预约时间",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d5",
+      "label": "次日维修",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d6",
+      "label": "投诉减盐",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d7",
+      "label": "花样较少",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d8",
+      "label": "每周重复",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d9",
+      "label": "书法棋牌",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d10",
+      "label": "下午拥挤",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d11",
+      "label": "阅览安静",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d12",
+      "label": "器材更新",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d13",
+      "label": "纸质填表",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d14",
+      "label": "手机更快",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d15",
+      "label": "活动签到",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d16",
+      "label": "反馈监督",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d17",
+      "label": "结识朋友",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d18",
+      "label": "每日想去",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d19",
+      "label": "生日关怀",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d20",
+      "label": "赠送寿面",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d21",
+      "label": "推荐邻居",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d22",
+      "label": "配合问卷",
+      "level": 4,
+      "category": "描述"
+    },
+    {
+      "id": "d23",
+      "label": "支持社区",
+      "level": 4,
+      "category": "描述"
+    }
+  ],
+  "edges": [
+    {
+      "source": "root",
+      "target": "c1",
+      "type": "层级",
+      "label": "次级"
+    },
+    {
+      "source": "root",
+      "target": "c2",
+      "type": "层级",
+      "label": "次级"
+    },
+    {
+      "source": "root",
+      "target": "c3",
+      "type": "层级",
+      "label": "次级"
+    },
+    {
+      "source": "root",
+      "target": "c4",
+      "type": "层级",
+      "label": "次级"
+    },
+    {
+      "source": "root",
+      "target": "c5",
+      "type": "层级",
+      "label": "次级"
+    },
+    {
+      "source": "root",
+      "target": "c6",
+      "type": "层级",
+      "label": "次级"
+    },
+    {
+      "source": "c1",
+      "target": "p1",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "c1",
+      "target": "p2",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "c1",
+      "target": "p3",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "c2",
+      "target": "p4",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "c2",
+      "target": "p5",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "c3",
+      "target": "p6",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "c3",
+      "target": "p7",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "c3",
+      "target": "p8",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "c3",
+      "target": "p9",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "c4",
+      "target": "p10",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "c4",
+      "target": "p11",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "c5",
+      "target": "p12",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "c5",
+      "target": "p13",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "c6",
+      "target": "p14",
+      "type": "层级",
+      "label": "表现"
+    },
+    {
+      "source": "p1",
+      "target": "d1",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p1",
+      "target": "d2",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p2",
+      "target": "d3",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p2",
+      "target": "d4",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p3",
+      "target": "d5",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p4",
+      "target": "d6",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p5",
+      "target": "d7",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p5",
+      "target": "d8",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p7",
+      "target": "d9",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p8",
+      "target": "d10",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p6",
+      "target": "d11",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p9",
+      "target": "d12",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p10",
+      "target": "d13",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p10",
+      "target": "d14",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p11",
+      "target": "d15",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p11",
+      "target": "d16",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p12",
+      "target": "d17",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p12",
+      "target": "d18",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p13",
+      "target": "d19",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p13",
+      "target": "d20",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p14",
+      "target": "d21",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p14",
+      "target": "d22",
+      "type": "层级",
+      "label": "描述"
+    },
+    {
+      "source": "p14",
+      "target": "d23",
+      "type": "层级",
+      "label": "描述"
+    }
+  ],
+  "metadata": {
+    "total_nodes": 44,
+    "total_edges": 43,
+    "levels": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "categories": [
+      "主题",
+      "设施",
+      "餐饮",
+      "态度",
+      "管理",
+      "意愿",
+      "表现",
+      "体验",
+      "描述"
+    ]
+  }
+}

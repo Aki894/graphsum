@@ -37,12 +37,14 @@ class TextPreprocessor:
     
     # 最短有效句子长度
     MIN_SENTENCE_LENGTH = 4
+    # OpenAI 兼容模式下的最低保留分数
+    MIN_SCORE = 0.5
     
     def __init__(self):
         """初始化预处理器"""
         self.enabled = os.getenv("ENABLE_RERANKER_PREPROCESS", "false").lower() == "true"
         self.api_key = os.getenv("RERANKER_API_KEY", "")
-        self.base_url = os.getenv("RERANKER_BASE_URL", "https://api.siliconflow.cn/v1")
+        self.base_url = os.getenv("RERANKER_BASE_URL", "")
         self.model = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
         self.top_ratio = float(os.getenv("RERANKER_TOP_RATIO", "0.8"))
         
@@ -153,8 +155,8 @@ class TextPreprocessor:
         """
         使用 Reranker API 评分并筛选句子
         支持两种模式：
-        1. 专用 rerank 端点（如 SiliconFlow）
-        2. OpenAI 兼容的 chat completions 端点（如 CherryIn qwen3-reranker）
+        1. 专用 rerank 端点（/rerank）
+        2. OpenAI 兼容的 chat completions 端点（返回 true/false 的 reranker 模型）
         """
         if not sentences:
             return []
@@ -164,8 +166,8 @@ class TextPreprocessor:
     
     def _reranker_filter_openai_mode(self, sentences: List[str]) -> List[str]:
         """
-        使用 OpenAI 兼容接口调用 Reranker（如 qwen3-reranker）
-        qwen3-reranker 通过 chat completions 接口，返回 true/false 判断相关性
+        使用 OpenAI 兼容接口调用 Reranker
+        模型通过 chat completions 接口返回 true/false 判断相关性
         """
         url = f"{self.base_url}/chat/completions"
         headers = {
@@ -183,7 +185,7 @@ class TextPreprocessor:
             
             for sent in batch:
                 try:
-                    # qwen3-reranker 的调用格式
+                    # chat completions 相关性判断调用格式
                     payload = {
                         "model": self.model,
                         "messages": [
@@ -203,7 +205,7 @@ class TextPreprocessor:
                     # 解析返回结果
                     content = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip().lower()
                     
-                    # qwen3-reranker 返回 "true" 或 "false"
+                    # 模型返回 "true" 或 "false"
                     if "true" in content or "yes" in content or "是" in content:
                         score = 1.0
                     elif "false" in content or "no" in content or "否" in content:
@@ -228,7 +230,7 @@ class TextPreprocessor:
         keep_count = max(10, int(len(all_scored) * self.top_ratio))
         
         # 筛选
-        selected = [text for text, score in all_scored[:keep_count] if score >= self.min_score]
+        selected = [text for text, score in all_scored[:keep_count] if score >= self.MIN_SCORE]
         
         # 如果筛选后太少，放宽条件
         if len(selected) < 10 and len(all_scored) >= 10:
@@ -238,7 +240,7 @@ class TextPreprocessor:
     
     def _reranker_filter_native_mode(self, sentences: List[str]) -> List[str]:
         """
-        使用专用 rerank 端点（如 SiliconFlow bge-reranker）
+        使用专用 rerank 端点（/rerank，bge-reranker 等模型）
         """
         url = f"{self.base_url}/rerank"
         headers = {

@@ -22,13 +22,31 @@ DEFAULT_LEVEL_DISTANCES: Dict[int, float] = {
     4: 7.0
 }
 
-# Default level colors (light gray for all)
-DEFAULT_LEVEL_COLORS: Dict[int, str] = {
-    1: '#D3D3D3',
-    2: '#D3D3D3',
-    3: '#D3D3D3',
-    4: '#D3D3D3',
+# Butterfly layout parameters
+BUTTERFLY_BASE_DISTANCE: Dict[int, float] = {
+    2: 2.5,
+    3: 4.5,
+    4: 6.5
 }
+BUTTERFLY_DISTANCE_VARIATION = 0.8  # 距离变化范围
+
+# 工程纸风格层级色（与前端 blueprint.js 保持一致）
+DEFAULT_LEVEL_COLORS: Dict[int, str] = {
+    1: '#0055FF',
+    2: '#E11D48',
+    3: '#059669',
+    4: '#D97706',
+}
+
+LEVEL_CODES: Dict[int, str] = {1: 'ROOT', 2: 'CORE', 3: 'SUB', 4: 'DETAIL'}
+
+# 图纸底色 / 墨色 / 灰线
+SHEET_COLOR = '#F8FAFC'
+SHEET_DOT = '#94A3B8'
+SHEET_LINE = '#CBD5E1'
+INK_COLOR = '#0F172A'
+SLATE_COLOR = '#64748B'
+ENG_BLUE = '#0055FF'
 
 
 def calculate_positions_hierarchical(
@@ -145,6 +163,128 @@ def calculate_positions_hierarchical(
     
     # Start recursive layout from root
     layout_subtree(root_node['id'], -np.pi / 2, 2 * np.pi, (0, 0), 1)
+    
+    return positions
+
+
+def calculate_positions_butterfly(
+    nodes: List[Dict[str, Any]],
+    edges: List[Dict[str, Any]],
+    base_distances: Optional[Dict[int, float]] = None,
+    distance_variation: float = BUTTERFLY_DISTANCE_VARIATION
+) -> Dict[str, Tuple[float, float]]:
+    """
+    Calculate node positions using butterfly/fan layout.
+    Children are distributed in a fan shape on one side of parent,
+    with varying distances based on sibling count.
+    
+    Args:
+        nodes: List of node dicts with 'id', 'level', 'label' keys
+        edges: List of edge dicts with 'source', 'target', 'type' keys
+        base_distances: Base distances for each level
+        distance_variation: How much distance can vary (0-1)
+    
+    Returns:
+        Dict mapping node_id to (x, y) position tuple
+    """
+    if base_distances is None:
+        base_distances = BUTTERFLY_BASE_DISTANCE
+    
+    node_dict = {node['id']: node for node in nodes}
+    
+    # Build parent-child relationships
+    parent_children: Dict[str, List[str]] = defaultdict(list)
+    child_parent: Dict[str, str] = {}
+    for edge in edges:
+        edge_type = edge.get('type', '')
+        if edge_type == '' or edge_type == '层级':
+            source = edge['source']
+            target = edge['target']
+            if source in node_dict and target in node_dict:
+                if node_dict[source]['level'] < node_dict[target]['level']:
+                    parent_children[source].append(target)
+                    child_parent[target] = source
+    
+    # Find root node
+    root_node = None
+    for node in nodes:
+        if node['level'] == 1:
+            root_node = node
+            break
+    
+    if not root_node:
+        return {}
+    
+    positions: Dict[str, Tuple[float, float]] = {}
+    
+    # Calculate leaf count for angle allocation
+    def count_leaves(node_id: str) -> int:
+        children = parent_children.get(node_id, [])
+        if not children:
+            return 1
+        return sum(count_leaves(child) for child in children)
+    
+    leaf_counts: Dict[str, int] = {}
+    for node in nodes:
+        leaf_counts[node['id']] = count_leaves(node['id'])
+    
+    def layout_butterfly(
+        node_id: str,
+        center_angle: float,
+        angle_span: float,
+        level: int
+    ) -> None:
+        """
+        Layout nodes in butterfly pattern.
+        Children fan out from parent with varying distances.
+        """
+        if node_id not in node_dict:
+            return
+        
+        # Position root at center
+        if level == 1:
+            positions[node_id] = (0.0, 0.0)
+        
+        children = parent_children.get(node_id, [])
+        if not children:
+            return
+        
+        n_children = len(children)
+        base_dist = base_distances.get(level + 1, 5.0)
+        
+        # Calculate total leaves for proportional angle allocation
+        total_leaves = sum(leaf_counts[child] for child in children)
+        
+        # Start angle for children (fan out from center_angle)
+        current_angle = center_angle - angle_span / 2
+        
+        for idx, child_id in enumerate(children):
+            child_leaves = leaf_counts[child_id]
+            # Proportional angle based on subtree size
+            child_angle_span = angle_span * (child_leaves / total_leaves)
+            child_center_angle = current_angle + child_angle_span / 2
+            
+            # Vary distance based on position in sibling list
+            # Middle children are closer, edge children are farther
+            if n_children > 1:
+                # Normalized position: 0 at edges, 1 at center
+                center_factor = 1 - abs(2 * idx / (n_children - 1) - 1)
+                distance = base_dist * (1 - distance_variation * 0.5 + distance_variation * center_factor * 0.5)
+            else:
+                distance = base_dist
+            
+            # Calculate position
+            x = positions[node_id][0] + distance * np.cos(child_center_angle)
+            y = positions[node_id][1] + distance * np.sin(child_center_angle)
+            positions[child_id] = (x, y)
+            
+            # Recursively layout grandchildren
+            layout_butterfly(child_id, child_center_angle, child_angle_span, level + 1)
+            
+            current_angle += child_angle_span
+    
+    # Start layout from root
+    layout_butterfly(root_node['id'], -np.pi / 2, 2 * np.pi, 1)
     
     return positions
 
@@ -301,7 +441,8 @@ def draw_graph(
     title: Optional[str] = None,
     level_colors: Optional[Dict[int, str]] = None,
     show_edge_labels: bool = True,
-    show_crossing_highlight: bool = False
+    show_crossing_highlight: bool = False,
+    layout_mode: str = "butterfly"
 ) -> int:
     """
     Draw graph with hierarchical layout and save to file.
@@ -315,6 +456,7 @@ def draw_graph(
         level_colors: Optional custom colors for each level
         show_edge_labels: Whether to show '次级' labels on edges
         show_crossing_highlight: Whether to highlight crossing lines in red
+        layout_mode: Layout algorithm - "butterfly" (default) or "radial"
     
     Returns:
         Number of line crossings found
@@ -324,9 +466,11 @@ def draw_graph(
     
     # Calculate positions if not provided
     if positions is None:
-        positions = calculate_positions_hierarchical(nodes, edges)
+        if layout_mode == "butterfly":
+            positions = calculate_positions_butterfly(nodes, edges)
+        else:
+            positions = calculate_positions_hierarchical(nodes, edges)
         # Note: node_size will be calculated below, so we use a default here
-        # This will be recalculated if positions are pre-calculated
         temp_node_size = 0.5 if len(nodes) <= 30 else (0.4 if len(nodes) <= 50 else 0.3)
         positions = adjust_positions_to_avoid_overlap(positions, nodes, node_size=temp_node_size)
     
@@ -338,41 +482,86 @@ def draw_graph(
         figsize = (20, 16)
     else:
         figsize = (24, 18)
-    
+
     fig, ax = plt.subplots(figsize=figsize)
-    
-    # Adjust node size and font based on node count (increased for better visibility)
+    fig.patch.set_facecolor(SHEET_COLOR)
+    ax.set_facecolor(SHEET_COLOR)
+
+    # 标题字号随节点数缩放
     if n_nodes <= 30:
-        node_size = 0.5
         font_size = 11
     elif n_nodes <= 50:
-        node_size = 0.4
-        font_size = 9
+        font_size = 10
     else:
-        node_size = 0.3
-        font_size = 8
-    
+        font_size = 9
+
+    # 卡片尺寸（数据单位）：编号行 + 标题行，与前端卡片比例一致
+    max_coord = max([max(abs(p[0]), abs(p[1])) for p in positions.values()]) if positions else 7.0
+    span = 2 * max_coord + 2
+    inch_per_unit = (figsize[0] - 2.0) / span
+    char_w = font_size / 72.0 / inch_per_unit          # 一个中文字符宽
+    code_char_w = char_w * 0.52                        # 等宽小编号字符宽
+    line_h = font_size / 72.0 / inch_per_unit * 1.55   # 标题行高
+    code_h = line_h * 0.8
+    pad = line_h * 0.55
+
+    def card_dims(node):
+        label = str(node.get('label', node['id']))
+        lines = []
+        for i in range(0, len(label), 8):
+            lines.append(label[i:i + 8])
+        if len(lines) > 2:
+            lines = lines[:2]
+            lines[1] = lines[1][:7] + '…'
+        if not lines:
+            lines = [str(node['id'])]
+        code = 'L{} // {}'.format(node.get('level', '?'), LEVEL_CODES.get(node.get('level'), 'NODE'))
+        title_w = max(len(l) for l in lines) * char_w
+        w = max(char_w * 7, pad * 2 + max(title_w, len(code) * code_char_w) + char_w * 0.6)
+        h = pad * 2 + code_h + line_h * len(lines)
+        return w, h, lines, code
+
+    dims = {n['id']: card_dims(n) for n in nodes if n['id'] in positions}
+
+    # 卡片式节点需要更大的同层间距
+    positions = adjust_positions_to_avoid_overlap(positions, nodes, node_size=0.62)
+
+    # 点阵工程纸底纹
+    step = 0.5
+    gx = np.arange(-max_coord - 1, max_coord + 1 + step, step)
+    gy = np.arange(-max_coord - 1, max_coord + 1 + step, step)
+    mx, my = np.meshgrid(gx, gy)
+    ax.scatter(mx.ravel(), my.ravel(), s=1.6, color=SHEET_DOT, alpha=0.4, marker='.', linewidths=0)
+
     # Check crossings if highlighting enabled
     crossings = []
     if show_crossing_highlight:
         crossings = check_line_crossing(positions, edges)
-    
-    # Draw edges
+
+    def rect_trim(pos, direction, w, h):
+        """沿方向到卡片矩形边界的距离"""
+        dx, dy = abs(direction[0]), abs(direction[1])
+        tx = (w / 2) / dx if dx > 1e-9 else np.inf
+        ty = (h / 2) / dy if dy > 1e-9 else np.inf
+        return min(tx, ty)
+
+    # Draw edges（灰线 + 小箭头，交叉高亮保留红色）
     for edge in edges:
         if edge['source'] not in positions or edge['target'] not in positions:
             continue
-        
+
         source_pos = np.array(positions[edge['source']])
         target_pos = np.array(positions[edge['target']])
-        
+
         direction = target_pos - source_pos
         distance = np.linalg.norm(direction)
         if distance > 0:
             direction = direction / distance
-            arrow_start = source_pos + direction * node_size
-            arrow_end = target_pos - direction * node_size
-            
-            # Check if this edge is crossing
+            sw, sh = dims.get(edge['source'], (1.0, 0.7))[:2]
+            tw, th = dims.get(edge['target'], (1.0, 0.7))[:2]
+            arrow_start = source_pos + direction * (rect_trim(source_pos, direction, sw, sh) + 0.04)
+            arrow_end = target_pos - direction * (rect_trim(target_pos, direction, tw, th) + 0.06)
+
             is_crossing = False
             if show_crossing_highlight:
                 for (s1, t1), (s2, t2) in crossings:
@@ -380,64 +569,75 @@ def draw_graph(
                        (edge['source'] == s2 and edge['target'] == t2):
                         is_crossing = True
                         break
-            
-            color = '#FF0000' if is_crossing else '#666666'
-            lw = 3.0 if is_crossing else 2.5
-            alpha = 0.9 if is_crossing else 0.6
-            
+
+            color = '#FF0000' if is_crossing else SHEET_DOT
+            lw = 2.2 if is_crossing else 1.1
+            alpha = 0.95 if is_crossing else 0.85
+
             ax.annotate(
                 '', xy=arrow_end, xytext=arrow_start,
-                arrowprops=dict(arrowstyle='->', lw=lw, color=color, alpha=alpha)
+                arrowprops=dict(arrowstyle='-|>', lw=lw, color=color, alpha=alpha,
+                                mutation_scale=9, shrinkA=0, shrinkB=0)
             )
-            
-            # Add edge label (skip generic labels like '次级' to reduce visual clutter)
+
             if show_edge_labels:
                 edge_label = edge.get('label', '')
-                # 只显示有实际信息量的关系名，跳过通用的"次级"标签
                 if edge_label and edge_label not in ('次级', '层级', '包含', '属于'):
                     mid_x = (source_pos[0] + target_pos[0]) / 2
                     mid_y = (source_pos[1] + target_pos[1]) / 2
                     ax.text(
-                        mid_x, mid_y, edge_label, fontsize=6,
+                        mid_x, mid_y, edge_label, fontsize=6, color=SLATE_COLOR,
                         ha='center', va='center',
-                        bbox=dict(
-                            boxstyle='round,pad=0.2',
-                            facecolor='white', alpha=0.8, edgecolor='none'
-                        )
+                        bbox=dict(boxstyle='square,pad=0.15', facecolor=SHEET_COLOR,
+                                  alpha=0.9, edgecolor='none')
                     )
-    
-    # Draw nodes
+
+    # Draw nodes：白底技术卡片（左侧类别色条 + 等宽编号 + 深墨标题）
     for node in nodes:
         if node['id'] not in positions:
             continue
-        
+
         pos = positions[node['id']]
-        color = level_colors.get(node['level'], '#CCCCCC')
-        
-        circle = patches.Circle(
-            pos, node_size, facecolor=color,
-            edgecolor='white', linewidth=1.5, alpha=0.9
+        level = node.get('level', 2)
+        color = level_colors.get(level, '#7C3AED')
+        w, h, lines, code = dims[node['id']]
+        left, top = pos[0] - w / 2, pos[1] + h / 2
+        is_root = level == 1
+
+        card = patches.Rectangle(
+            (left, top - h), w, h,
+            facecolor='#EFF6FF' if is_root else '#FFFFFF',
+            edgecolor=ENG_BLUE if is_root else SHEET_DOT,
+            linewidth=1.4 if is_root else 1.0, zorder=3
         )
-        ax.add_patch(circle)
-        
-        # Add node label with wrapping
-        label = node['label']
-        if len(label) > 8:
-            label = wrap_text(label, max_chars_per_line=4)
-        
-        ax.text(
-            pos[0], pos[1], label, fontsize=font_size,
-            ha='center', va='center', weight='bold', color='black'
+        ax.add_patch(card)
+        stripe = patches.Rectangle(
+            (left, top - h), w * 0.045, h,
+            facecolor=color, edgecolor='none', zorder=4
         )
-    
+        ax.add_patch(stripe)
+
+        tx = left + pad + w * 0.045
+        ax.text(tx, top - pad - code_h * 0.5, code,
+                fontsize=max(6, font_size - 4), color=SLATE_COLOR,
+                family='monospace', ha='left', va='center', zorder=5)
+        for i, ln in enumerate(lines):
+            ax.text(tx, top - pad - code_h - line_h * (i + 0.5), ln,
+                    fontsize=font_size, color=INK_COLOR, weight='bold',
+                    ha='left', va='center', zorder=5)
+
     # Set figure properties
-    if positions:
-        max_coord = max([max(abs(pos[0]), abs(pos[1])) for pos in positions.values()])
-        ax.set_xlim(-max_coord - 1, max_coord + 1)
-        ax.set_ylim(-max_coord - 1, max_coord + 1)
+    ax.set_xlim(-max_coord - 1, max_coord + 1)
+    ax.set_ylim(-max_coord - 1, max_coord + 1)
     ax.set_aspect('equal')
     ax.axis('off')
-    
+
+    # 四角套准标记
+    for cx, cy in ((-max_coord - 0.7, -max_coord - 0.7), (max_coord + 0.7, -max_coord - 0.7),
+                   (-max_coord - 0.7, max_coord + 0.7), (max_coord + 0.7, max_coord + 0.7)):
+        ax.plot([cx - 0.18, cx + 0.18], [cy, cy], color=ENG_BLUE, lw=0.8, alpha=0.7)
+        ax.plot([cx, cx], [cy - 0.18, cy + 0.18], color=ENG_BLUE, lw=0.8, alpha=0.7)
+
     # Set title
     if title is None:
         base_name = os.path.basename(output_path) if output_path else ""
@@ -450,11 +650,26 @@ def draw_graph(
             title = nodes[0]['label']
         else:
             title = "图结构"
-    ax.set_title(title, fontsize=16, weight='bold', pad=20)
-    
+    ax.set_title(title, fontsize=16, weight='bold', pad=24, color=INK_COLOR)
+    fig.text(0.02, 0.985, 'GRAPHSUM · KNOWLEDGE GRAPH DRAFTING', fontsize=8,
+             color=SLATE_COLOR, family='monospace', va='top')
+    fig.text(0.98, 0.985, 'SCALE 1:1 · LOCAL-FIRST', fontsize=8,
+             color=SLATE_COLOR, family='monospace', va='top', ha='right')
+
+    # 层级图例
+    legend_handles = [
+        patches.Patch(facecolor=level_colors.get(lv, '#7C3AED'),
+                      label='L{} {}'.format(lv, name))
+        for lv, name in ((1, '根节点'), (2, '核心话题'), (3, '子话题'), (4, '细节'))
+    ]
+    leg = fig.legend(handles=legend_handles, loc='lower center', ncol=4,
+                     frameon=False, fontsize=9, bbox_to_anchor=(0.5, 0.005))
+    for t in leg.get_texts():
+        t.set_color(SLATE_COLOR)
+
     # Save image
     plt.tight_layout()
-    plt.savefig(output_path, dpi=300, bbox_inches='tight', facecolor='white')
+    plt.savefig(output_path, dpi=220, bbox_inches='tight', facecolor=SHEET_COLOR)
     plt.close()
-    
+
     return len(crossings)

@@ -12,11 +12,14 @@ networkx==3.2.1
 
 # HTTP请求
 requests==2.31.0
-httpx>=0.24.0
+httpx==0.28.1
 
 # 字符编码
 chardet==5.2.0
 charset-normalizer==3.3.2
 
 # AI API客户端
-openai>=1.0.0
+openai==3.55.0
+
+# 环境变量
+python-dotenv==1.2.4

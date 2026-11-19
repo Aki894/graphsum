@@ -1,132 +1,116 @@
-# 访谈图结构生成器
+# GraphSum — 访谈文本 → 层次化知识图谱
 
-## 功能说明
+[English](README_EN.md)
 
-本工具用于从访谈Word文档中提取实体节点，并生成层次化的图结构可视化。
+LLM 驱动的访谈/文档知识图谱工具：多格式文本 → 四层实体图谱 → 多文档合并 → Flask Web 编码界面。适用于质性研究编码、业务访谈沉淀、知识库结构化等场景。
 
-## 主要特性
+![合成样例输出图谱](examples/sample_interview_graph.png)
 
-1. **自动提取实体**：使用GLM-4.5-air模型从访谈文本中提取关键实体
-2. **层次化结构**：生成4层级的图结构，包含50-60个节点
-3. **智能布局**：
-   - 左侧节点向左展开，右侧节点向右展开
-   - 自动避免节点重叠
-   - 静态布局，适合打印和展示
-4. **批量处理**：支持批量处理多个Word文档
-5. **表格支持**：可以正确解析Word文档中的表格内容
+*上图为合成样例（`examples/sample_interview.txt`，人物情节均虚构）经真实 API 抽取生成的四层图谱。*
 
-## 图结构层级
+## 功能特性
 
-- **第1层**：访谈主题（1个节点）
-- **第2层**：主要类别（5-7个节点），如服务态度、医疗质量、环境设施等
-- **第3层**：具体表现（20-30个节点）
-- **第4层**：详细描述（25-35个节点）
+- **多格式输入**：`.docx`（含表格）、`.doc`、`.txt`、`.md`、`.json`、`.ass`、`.srt`
+- **多服务商配置**：任意 OpenAI 兼容服务商，通过环境变量配置，仓库不含任何密钥
+- **四层层次图谱**：主题 → 类别 → 表现 → 描述，严格单父节点树形结构，节点数量上限可配置
+- **长文本分段**：超过阈值自动分段抽取、重叠拼接、结果合并
+- **两级清洗预处理**：规则过滤 + 可选 Reranker 评分筛选，面向直播字幕等噪声文本
+- **多文档图谱合并**：按层 AI 语义合并、去重、节点上限约束，生成总编码图
+- **Web 编码界面**：上传、批量生成、SSE 实时进度、任务取消、服务商/提示词切换、图谱编辑器（JSON 编辑 + 重新出图）
+- **布局算法**：辐射状 / 蝶形两种布局，自动避免节点重叠，交叉检测，含单元测试
+- **显式失败**：API 调用或解析失败时明确报错，不生成预设/虚构图谱
 
-## 使用方法
-
-### 环境准备
+## 快速开始
 
 ```bash
-# 激活conda环境
-conda activate ADE
+python -m venv .venv
+# Windows: .venv\Scripts\activate   Linux/macOS: source .venv/bin/activate
+pip install -r requirements.txt
 
-# 安装依赖（如果尚未安装）
-pip install python-docx matplotlib networkx zhipuai
+cp .env.template .env   # 填入你自己的 API 密钥
+python app.py           # 打开 http://127.0.0.1:5001
 ```
 
-### 运行程序
+在 Web 界面上传 `examples/sample_interview.txt`（或 `.docx` 版本），选择服务商与提示词模板（默认 `interview`），点击生成即可复现上方样例图。
+
+### 命令行模式
 
 ```bash
-python interview_graph_generator.py
+python interview_graph_generator.py   # 1=单文档 2=批量
 ```
 
-程序会提示选择处理模式：
-- **选项1**：测试单个文档（默认处理第一个Word文档）
-- **选项2**：批量处理所有文档
+将 `.docx` 放入 `data/`，或用 `TEST_FILE_PATH` 指定单个文件。输出为同目录下的 `*_graph.png` 与 `*_graph.json`。
 
-### 输入文件
+## Web 界面
 
-将访谈Word文档放在 `data/` 文件夹下，支持的格式：
-- `.docx` 文件
-- 可包含表格内容
+![Web 编码界面](docs/screenshots/web_ui.png)
 
-### 输出文件
+- 文件上传与列表、批量子图生成、总编码图合并
+- SSE 流式日志与进度、任务取消
+- 服务商切换、提示词模板管理（`default` / `interview` / `danmaku` / `article` / `livestream`）
+- Reranker 预处理开关与参数
 
-生成的图结构保存在与原文档相同的位置，文件名格式：
-```
-原文件名_graph.png
-```
+![图谱查看器（浅色工程纸画布 / 印刷版 PNG）](docs/screenshots/viewer.png)
 
-例如：`sample_interview_graph.png`
+![生成控制台与模型实时输出流](docs/screenshots/console.png)
+
+### 图谱编辑器
+
+![图谱编辑器](docs/screenshots/editor.png)
+
+`/editor` 页面可直接编辑图谱 JSON（增删节点/边、改标签），保存后一键重新渲染 PNG，适合人工编码校正。
 
 ## 配置说明
 
-GLM模型配置已内置在代码中：
-- 模型：glm-4.5-air
-- API地址：https://open.bigmodel.cn/api/paas/v4
-- API密钥：已配置
+所有配置走环境变量（`.env`，已被 gitignore）。复制 `.env.template` 后按需填写：
 
-## 图例说明
-
-生成的图结构使用不同颜色表示不同层级：
-- 🔴 **红色**：第1层（主题）
-- 🔵 **青色**：第2层（主要类别）
-- 🔵 **蓝色**：第3层（具体表现）
-- 🟢 **绿色**：第4层（详细描述）
-
-## 注意事项
-
-1. 节点总数控制在50-60个，确保图结构清晰可读
-2. 左侧节点会向左展开，右侧节点会向右展开，布局更加美观
-3. 主题节点会根据访谈内容自动生成，而非使用受访者姓名
-4. 如果GLM API调用失败，会使用预设的默认结构
-
-## 文件结构
-
-```
-示例项目/
-├── data/                          # 访谈Word文档目录
-│   ├── *.docx                    # 原始访谈文档
-│   └── *_graph.png               # 生成的图结构
-├── interview_graph_generator.py  # 主程序
-├── README.md                     # 说明文档
-└── 图结构呈现样式.png             # 参考样式
-```
-
-## 技术栈
-
-- **Python 3.11**
-- **python-docx**：Word文档解析
-- **matplotlib**：图形绘制
-- **networkx**：图结构处理
-- **zhipuai**：GLM模型调用
-- **numpy**：数值计算
-
-## 示例
-
-处理单个文档：
 ```bash
-echo "1" | python interview_graph_generator.py
+DEFAULT_PROVIDER=openai               # 默认服务商
+PROVIDER_OPENAI_API_KEY=你的密钥
+PROVIDER_OPENAI_BASE_URL=https://api.openai.com/v1
+PROVIDER_OPENAI_MODEL=gpt-4o-mini
 ```
 
-批量处理所有文档：
+- 服务商格式为 `PROVIDER_{NAME}_API_KEY / _BASE_URL / _MODEL`，可任意扩展；模板预置 OpenAI 官方示例，任何 OpenAI 兼容服务（含自建网关）按同样格式添加即可
+- `SECRET_KEY`：Flask session 密钥，可选；不设置时每次启动随机生成
+- `ENABLE_RERANKER_PREPROCESS` / `RERANKER_*`：字幕噪声清洗开关与 Reranker 配置
+- `DEFAULT_MAX_LEVEL2/3/4_NODES`：各层节点数量上限
+- `FLASK_DEBUG=true`：开发时启用调试模式（默认关闭，仅监听 127.0.0.1）
+
+## 多文档合并
+
+`merge_graphs.py` 加载 `data/` 下全部 `*_graph.json`，逐层调用 LLM 做语义合并与去重，强制单父节点约束与节点上限，输出 `merged_graph.png/json`。Web 界面一键触发，适合多份访谈的总编码图。
+
+## 清洗预处理
+
+`text_preprocessor.py` 对 `.ass/.srt` 字幕先做规则过滤（语气词、纯数字、欢迎/感谢礼物等噪声模式），启用 Reranker 时再按相关度保留高分句子，压缩送入 LLM 的文本量。未启用时原文透传。
+
+## 代码导读
+
+| 模块 | 职责 |
+|---|---|
+| `app.py` | Flask 路由、任务线程、SSE、上传/合并/编辑器 API |
+| `interview_graph_generator.py` | 文本解析、分段、LLM 抽取、图清洗、出图 |
+| `merge_graphs.py` | 多子图加载、逐层 AI 合并、节点映射 |
+| `text_preprocessor.py` | 分句、规则过滤、Reranker 筛选 |
+| `graph_layout.py` | 辐射/蝶形布局、重叠避免、交叉检测、渲染 |
+| `logger_config.py` | 日志与流式输出 |
+| `prompts.json` | 可切换提示词模板（运行时可在界面编辑） |
+
+## 测试
+
 ```bash
-echo "2" | python interview_graph_generator.py
+python -m unittest discover -v
 ```
 
-## 更新日志
+覆盖布局无交叉、抽取失败显式报错、图清洗、分段、合并去重、预处理规则（无需 API 密钥）。
 
-### v1.1 (2025-11-24)
-- ✅ 优化布局算法，实现真正的辐射状展开
-- ✅ 子节点根据父节点角度向外展开，不再集中在右侧
-- ✅ 图结构更加均衡美观，各方向分布合理
+## 隐私与合规
 
-### v1.0 (2025-11-24)
-- ✅ 实现基础功能
-- ✅ 支持Word文档解析（包括表格）
-- ✅ 集成GLM模型进行实体提取
-- ✅ 实现层次化图结构生成
-- ✅ 优化布局算法，左右对称展开
-- ✅ 自动避免节点重叠
-- ✅ 支持批量处理
-- ✅ 主题自动提取（不使用人名）
+- 仓库只含工具代码与**合成样例**，不含任何真实访谈数据
+- `data/`、`logs/`、`.env` 均被 gitignore，不会进入版本库
+- 抽取失败显式报错，不以预设结构冒充抽取结果
+
+## 许可证
+
+[MIT](LICENSE)

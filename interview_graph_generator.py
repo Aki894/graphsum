@@ -38,7 +38,7 @@ class InterviewGraphGenerator:
         self.current_prompt_template = self.prompts_config.get('current', 'default')
         
         # 根据默认provider初始化
-        self.current_provider = os.getenv("DEFAULT_PROVIDER", "deepseek")
+        self.current_provider = os.getenv("DEFAULT_PROVIDER", "openai")
         if self.current_provider not in self.providers:
             available = list(self.providers.keys())
             if available:
@@ -55,7 +55,7 @@ class InterviewGraphGenerator:
         # 扫描环境变量，找出所有 PROVIDER_XXX_API_KEY
         for key, value in os.environ.items():
             if key.startswith("PROVIDER_") and key.endswith("_API_KEY") and value:
-                # 提取服务商名称，如 PROVIDER_SILICONFLOW_API_KEY -> siliconflow
+                # 提取服务商名称，如 PROVIDER_OPENAI_API_KEY -> openai
                 name = key.replace("PROVIDER_", "").replace("_API_KEY", "").lower()
                 providers[name] = {
                     "api_key": value,
@@ -752,8 +752,8 @@ class InterviewGraphGenerator:
             'edges': cleaned_edges
         }
     
-    def extract_entities_with_glm(self, text, filename, max_nodes_config=None):
-        """使用GLM模型提取实体和关系，支持长文本分段提取"""
+    def extract_entities(self, text, filename, max_nodes_config=None):
+        """使用 LLM 提取实体和关系（OpenAI 兼容接口），支持长文本分段提取"""
         
         # 获取节点数量上限配置
         max_level2 = max_nodes_config.get('level2', self.DEFAULT_MAX_LEVEL2) if max_nodes_config else self.DEFAULT_MAX_LEVEL2
@@ -812,7 +812,7 @@ class InterviewGraphGenerator:
                 
                 # 更新 root 节点的 label（用主题提取）；直播模板下保持固定文案
                 if getattr(self, "current_prompt_template", "") != "livestream":
-                    topic = self.extract_topic_with_glm(text, filename)
+                    topic = self.extract_topic(text, filename)
                     for node in merged_graph['nodes']:
                         if node['id'] == 'root':
                             node['label'] = topic
@@ -821,9 +821,10 @@ class InterviewGraphGenerator:
                 log_info(f"    [分段提取] 最终结果: {len(merged_graph['nodes'])} 个节点，{len(merged_graph['edges'])} 条边")
                 return merged_graph
             else:
-                log_warning("    [分段提取] 所有段落提取失败，回退到简化结构")
-                fallback_topic = self.extract_topic_with_glm(text, filename)
-                return self.create_simple_structure(fallback_topic, text)
+                raise RuntimeError(
+                    f"实体提取失败（{filename}）：所有 {total_count} 个分段均未成功提取，"
+                    "不生成预设结构。请检查 API 服务商配置、密钥与网络后重试"
+                )
         
         else:
             # === 单次提取模式（短文本）===
@@ -888,15 +889,15 @@ class InterviewGraphGenerator:
                 except json.JSONDecodeError as e:
                     log_error(f"JSON解析错误: {e}，尝试 {attempt + 1}/{max_retries}")
                 except Exception as e:
-                    log_error(f"GLM API调用失败: {e}，尝试 {attempt + 1}/{max_retries}")
+                    log_error(f"LLM API调用失败: {e}，尝试 {attempt + 1}/{max_retries}")
             
-            # 所有重试失败后，生成简化结构
-            log_warning("GLM提取失败，生成基于主题的简化结构")
-            fallback_topic = self.extract_topic_with_glm(text, filename)
-            return self.create_simple_structure(fallback_topic, text)
+            raise RuntimeError(
+                f"实体提取失败（{filename}）：重试 {max_retries} 次后仍未获得有效图谱，"
+                "不生成预设结构。请检查 API 服务商配置、密钥与网络后重试"
+            )
     
-    def extract_topic_with_glm(self, text, filename):
-        """使用GLM从访谈内容中提取主题"""
+    def extract_topic(self, text, filename):
+        """使用 LLM 从访谈内容中提取主题"""
         try:
             # 使用可配置的提示词
             prompt = self._get_prompt('extract_topic', text=text[:800])
@@ -965,286 +966,6 @@ class InterviewGraphGenerator:
         if len(name) < 2:
             name = "内容分析"
         return name
-    
-    def extract_categories_from_text(self, text):
-        """从文本中提取6个主要类别"""
-        try:
-            prompt = f"""
-访谈内容：{text[:800]}
-
-提取6个主题类别，每个2-4字，用逗号分隔，直接输出：
-"""
-            
-            result = self._call_api(
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=100
-            )
-            categories_text = result.replace('，', ',').replace('、', ',')
-            category_labels = [cat.strip() for cat in categories_text.split(',') if cat.strip()]
-            
-            if len(category_labels) >= 4:
-                # 生成ID和标签对
-                categories = []
-                for i, label in enumerate(category_labels[:6]):
-                    cat_id = f"cat{i+1}"
-                    categories.append((cat_id, label))
-                log_info(f"从文本提取的类别: {[c[1] for c in categories]}")
-                return categories
-            else:
-                log_warning("提取的类别数量不足，使用默认类别")
-                return None
-        except Exception as e:
-            log_error(f"类别提取失败: {e}")
-            return None
-    
-    def create_simple_structure(self, topic, text):
-        """基于文本关键词创建简化结构"""
-        log_info(f"正在基于文本关键词生成图结构...")
-        
-        # 从文本中提取关键词来确定类别
-        categories = self.extract_categories_from_text(text)
-        if not categories:
-            # 如果提取失败，使用默认类别
-            categories = [
-                ("service", "服务态度"),
-                ("medical", "医疗质量"),
-                ("environment", "环境设施"),
-                ("management", "管理制度"),
-                ("emotion", "情感体验"),
-                ("behavior", "行为反应")
-            ]
-        
-        nodes = [{"id": "root", "label": topic, "level": 1, "category": "主题"}]
-        edges = []
-        
-        # 添加第2层类别节点
-        for cat_id, cat_label in categories:
-            nodes.append({"id": cat_id, "label": cat_label, "level": 2, "category": "分类"})
-            edges.append({"source": "root", "target": cat_id, "type": "层级", "label": "次级"})
-        
-        # 为每个类别添加4个第3层节点
-        level3_labels = {
-            "service": ["服务热情", "态度友好", "响应及时", "处理细致"],
-            "medical": ["技术专业", "诊断准确", "治疗有效", "护理周到"],
-            "environment": ["环境整洁", "设施完善", "布局合理", "氛围温馨"],
-            "management": ["制度规范", "流程清晰", "管理有序", "监督到位"],
-            "emotion": ["感到满意", "建立信任", "心存感激", "印象深刻"],
-            "behavior": ["积极配合", "主动沟通", "耐心等待", "理解支持"]
-        }
-        
-        level4_labels = ["表现突出", "效果显著", "体验良好", "印象深刻", "值得称赞", "令人满意"]
-        
-        node_counter = 0
-        for cat_id, cat_label in categories:
-            labels = level3_labels.get(cat_id, [f"{cat_label}表现{i+1}" for i in range(4)])
-            for i, label in enumerate(labels):
-                node_id = f"{cat_id}_item{i+1}"
-                nodes.append({"id": node_id, "label": label, "level": 3, "category": "表现"})
-                edges.append({"source": cat_id, "target": node_id, "type": "层级", "label": "次级"})
-                
-                # 部分第3层节点添加第4层描述
-                if i < 2:  # 每个类别的前2个第3层节点添加描述
-                    for j in range(2):
-                        desc_id = f"{node_id}_desc{j+1}"
-                        desc_label = level4_labels[node_counter % len(level4_labels)]
-                        nodes.append({"id": desc_id, "label": desc_label, "level": 4, "category": "描述"})
-                        edges.append({"source": node_id, "target": desc_id, "type": "层级", "label": "次级"})
-                        node_counter += 1
-        
-        log_info(f"生成了 {len(nodes)} 个节点，{len(edges)} 条边")
-        return {"nodes": nodes, "edges": edges}
-    
-    def create_default_structure(self, topic="医院服务体验访谈"):
-        """创建默认的层次结构，包含50-60个节点"""
-        nodes = [
-            # 第1层 - 主题
-            {"id": "root", "label": topic, "level": 1, "category": "主题"},
-            
-            # 第2层 - 主要类别 (6个)
-            {"id": "service_attitude", "label": "服务态度", "level": 2, "category": "服务评价"},
-            {"id": "medical_quality", "label": "医疗质量", "level": 2, "category": "医疗评价"},
-            {"id": "environment_facility", "label": "环境设施", "level": 2, "category": "硬件评价"},
-            {"id": "management_system", "label": "管理制度", "level": 2, "category": "管理评价"},
-            {"id": "emotional_experience", "label": "情感体验", "level": 2, "category": "情感评价"},
-            {"id": "behavior_response", "label": "行为反应", "level": 2, "category": "行为评价"},
-        ]
-        
-        # 第3层 - 具体表现 (24个)
-        level3_nodes = [
-            # 服务态度下的子节点
-            {"id": "enthusiastic_service", "label": "服务热情", "level": 3, "category": "态度表现"},
-            {"id": "patient_handling", "label": "办事耐心", "level": 3, "category": "态度表现"},
-            {"id": "polite_treatment", "label": "待人有礼", "level": 3, "category": "态度表现"},
-            {"id": "meticulous_handling", "label": "处理细致", "level": 3, "category": "态度表现"},
-            
-            # 医疗质量下的子节点
-            {"id": "thoughtful_nursing", "label": "护理体贴", "level": 3, "category": "护理质量"},
-            {"id": "dedicated_work", "label": "工作敬业", "level": 3, "category": "工作态度"},
-            {"id": "timely_response", "label": "响应及时", "level": 3, "category": "响应效率"},
-            {"id": "noble_medical_ethics", "label": "医德高尚", "level": 3, "category": "职业道德"},
-            
-            # 环境设施下的子节点
-            {"id": "complete_facilities", "label": "设施齐全", "level": 3, "category": "设施评价"},
-            {"id": "comfortable_environment", "label": "环境舒适", "level": 3, "category": "环境评价"},
-            {"id": "advanced_equipment", "label": "设备先进", "level": 3, "category": "设备评价"},
-            {"id": "clean_sanitation", "label": "卫生清洁", "level": 3, "category": "卫生评价"},
-            
-            # 管理制度下的子节点
-            {"id": "perfect_system", "label": "制度完善", "level": 3, "category": "制度评价"},
-            {"id": "system_culture", "label": "制度文化", "level": 3, "category": "文化建设"},
-            {"id": "material_culture", "label": "物质文化", "level": 3, "category": "文化建设"},
-            {"id": "behavioral_culture", "label": "行为文化", "level": 3, "category": "文化建设"},
-            
-            # 情感体验下的子节点
-            {"id": "satisfaction", "label": "满意", "level": 3, "category": "情感表达"},
-            {"id": "trust", "label": "信任", "level": 3, "category": "情感表达"},
-            {"id": "gratitude", "label": "感谢", "level": 3, "category": "情感表达"},
-            {"id": "pride", "label": "骄傲", "level": 3, "category": "情感表达"},
-            
-            # 行为反应下的子节点
-            {"id": "acceptance", "label": "接受", "level": 3, "category": "行为表现"},
-            {"id": "understanding", "label": "理解", "level": 3, "category": "行为表现"},
-            {"id": "support", "label": "支持", "level": 3, "category": "行为表现"},
-            {"id": "encouragement", "label": "鼓励", "level": 3, "category": "行为表现"},
-        ]
-        
-        # 第4层 - 详细描述 (29个)
-        level4_nodes = [
-            # 服务热情的详细描述
-            {"id": "warm_greeting", "label": "热情问候", "level": 4, "category": "具体行为"},
-            {"id": "active_help", "label": "主动帮助", "level": 4, "category": "具体行为"},
-            {"id": "friendly_communication", "label": "友好沟通", "level": 4, "category": "具体行为"},
-            {"id": "caring_attitude", "label": "关怀态度", "level": 4, "category": "具体行为"},
-            
-            # 医疗质量的详细描述
-            {"id": "professional_skills", "label": "专业技能", "level": 4, "category": "专业能力"},
-            {"id": "accurate_diagnosis", "label": "准确诊断", "level": 4, "category": "专业能力"},
-            {"id": "effective_treatment", "label": "有效治疗", "level": 4, "category": "治疗效果"},
-            {"id": "safety_assurance", "label": "安全保障", "level": 4, "category": "安全管理"},
-            
-            # 环境设施的详细描述
-            {"id": "spacious_layout", "label": "布局宽敞", "level": 4, "category": "空间设计"},
-            {"id": "good_ventilation", "label": "通风良好", "level": 4, "category": "环境质量"},
-            {"id": "modern_decoration", "label": "装修现代", "level": 4, "category": "视觉环境"},
-            {"id": "quiet_atmosphere", "label": "氛围安静", "level": 4, "category": "环境氛围"},
-            
-            # 管理制度的详细描述
-            {"id": "clear_processes", "label": "流程清晰", "level": 4, "category": "流程管理"},
-            {"id": "efficient_coordination", "label": "协调高效", "level": 4, "category": "协作管理"},
-            {"id": "strict_supervision", "label": "监督严格", "level": 4, "category": "质量管理"},
-            {"id": "continuous_improvement", "label": "持续改进", "level": 4, "category": "发展管理"},
-            
-            # 情感体验的详细描述
-            {"id": "deep_impression", "label": "印象深刻", "level": 4, "category": "深度感受"},
-            {"id": "emotional_resonance", "label": "情感共鸣", "level": 4, "category": "情感连接"},
-            {"id": "spiritual_comfort", "label": "心灵慰藉", "level": 4, "category": "心理支持"},
-            {"id": "sense_of_belonging", "label": "归属感", "level": 4, "category": "情感认同"},
-            
-            # 行为反应的详细描述
-            {"id": "positive_feedback", "label": "积极反馈", "level": 4, "category": "反馈行为"},
-            {"id": "constructive_suggestions", "label": "建设建议", "level": 4, "category": "建议行为"},
-            {"id": "cooperative_attitude", "label": "合作态度", "level": 4, "category": "协作行为"},
-            {"id": "word_of_mouth", "label": "口碑传播", "level": 4, "category": "传播行为"},
-            
-            # 其他详细描述
-            {"id": "praise_recognition", "label": "赞扬认可", "level": 4, "category": "评价行为"},
-            {"id": "respect_appreciation", "label": "敬重欣赏", "level": 4, "category": "态度表达"},
-            {"id": "liking_preference", "label": "喜爱偏好", "level": 4, "category": "偏好表达"},
-            {"id": "apology_forgiveness", "label": "道歉谅解", "level": 4, "category": "情感处理"},
-            {"id": "advanced_concepts", "label": "理念先进", "level": 4, "category": "思想理念"},
-        ]
-        
-        nodes.extend(level3_nodes)
-        nodes.extend(level4_nodes)
-        
-        # 创建边关系
-        edges = []
-        
-        # 第1层到第2层的连接
-        edges.extend([
-            {"source": "root", "target": "service_attitude", "type": "层级", "label": "次级"},
-            {"source": "root", "target": "medical_quality", "type": "层级", "label": "次级"},
-            {"source": "root", "target": "environment_facility", "type": "层级", "label": "次级"},
-            {"source": "root", "target": "management_system", "type": "层级", "label": "次级"},
-            {"source": "root", "target": "emotional_experience", "type": "层级", "label": "次级"},
-            {"source": "root", "target": "behavior_response", "type": "层级", "label": "次级"},
-        ])
-        
-        # 第2层到第3层的连接
-        edges.extend([
-            {"source": "service_attitude", "target": "enthusiastic_service", "type": "层级", "label": "次级"},
-            {"source": "service_attitude", "target": "patient_handling", "type": "层级", "label": "次级"},
-            {"source": "service_attitude", "target": "polite_treatment", "type": "层级", "label": "次级"},
-            {"source": "service_attitude", "target": "meticulous_handling", "type": "层级", "label": "次级"},
-            
-            {"source": "medical_quality", "target": "thoughtful_nursing", "type": "层级", "label": "次级"},
-            {"source": "medical_quality", "target": "dedicated_work", "type": "层级", "label": "次级"},
-            {"source": "medical_quality", "target": "timely_response", "type": "层级", "label": "次级"},
-            {"source": "medical_quality", "target": "noble_medical_ethics", "type": "层级", "label": "次级"},
-            
-            {"source": "environment_facility", "target": "complete_facilities", "type": "层级", "label": "次级"},
-            {"source": "environment_facility", "target": "comfortable_environment", "type": "层级", "label": "次级"},
-            {"source": "environment_facility", "target": "advanced_equipment", "type": "层级", "label": "次级"},
-            {"source": "environment_facility", "target": "clean_sanitation", "type": "层级", "label": "次级"},
-            
-            {"source": "management_system", "target": "perfect_system", "type": "层级", "label": "次级"},
-            {"source": "management_system", "target": "system_culture", "type": "层级", "label": "次级"},
-            {"source": "management_system", "target": "material_culture", "type": "层级", "label": "次级"},
-            {"source": "management_system", "target": "behavioral_culture", "type": "层级", "label": "次级"},
-            
-            {"source": "emotional_experience", "target": "satisfaction", "type": "层级", "label": "次级"},
-            {"source": "emotional_experience", "target": "trust", "type": "层级", "label": "次级"},
-            {"source": "emotional_experience", "target": "gratitude", "type": "层级", "label": "次级"},
-            {"source": "emotional_experience", "target": "pride", "type": "层级", "label": "次级"},
-            
-            {"source": "behavior_response", "target": "acceptance", "type": "层级", "label": "次级"},
-            {"source": "behavior_response", "target": "understanding", "type": "层级", "label": "次级"},
-            {"source": "behavior_response", "target": "support", "type": "层级", "label": "次级"},
-            {"source": "behavior_response", "target": "encouragement", "type": "层级", "label": "次级"},
-        ])
-        
-        # 第3层到第4层的连接
-        edges.extend([
-            {"source": "enthusiastic_service", "target": "warm_greeting", "type": "层级", "label": "次级"},
-            {"source": "enthusiastic_service", "target": "active_help", "type": "层级", "label": "次级"},
-            {"source": "thoughtful_nursing", "target": "friendly_communication", "type": "层级", "label": "次级"},
-            {"source": "thoughtful_nursing", "target": "caring_attitude", "type": "层级", "label": "次级"},
-            
-            {"source": "dedicated_work", "target": "professional_skills", "type": "层级", "label": "次级"},
-            {"source": "dedicated_work", "target": "accurate_diagnosis", "type": "层级", "label": "次级"},
-            {"source": "timely_response", "target": "effective_treatment", "type": "层级", "label": "次级"},
-            {"source": "timely_response", "target": "safety_assurance", "type": "层级", "label": "次级"},
-            
-            {"source": "complete_facilities", "target": "spacious_layout", "type": "层级", "label": "次级"},
-            {"source": "complete_facilities", "target": "good_ventilation", "type": "层级", "label": "次级"},
-            {"source": "comfortable_environment", "target": "modern_decoration", "type": "层级", "label": "次级"},
-            {"source": "comfortable_environment", "target": "quiet_atmosphere", "type": "层级", "label": "次级"},
-            
-            {"source": "perfect_system", "target": "clear_processes", "type": "层级", "label": "次级"},
-            {"source": "perfect_system", "target": "efficient_coordination", "type": "层级", "label": "次级"},
-            {"source": "system_culture", "target": "strict_supervision", "type": "层级", "label": "次级"},
-            {"source": "system_culture", "target": "continuous_improvement", "type": "层级", "label": "次级"},
-            
-            {"source": "satisfaction", "target": "deep_impression", "type": "层级", "label": "次级"},
-            {"source": "satisfaction", "target": "emotional_resonance", "type": "层级", "label": "次级"},
-            {"source": "trust", "target": "spiritual_comfort", "type": "层级", "label": "次级"},
-            {"source": "trust", "target": "sense_of_belonging", "type": "层级", "label": "次级"},
-            
-            {"source": "acceptance", "target": "positive_feedback", "type": "层级", "label": "次级"},
-            {"source": "acceptance", "target": "constructive_suggestions", "type": "层级", "label": "次级"},
-            {"source": "understanding", "target": "cooperative_attitude", "type": "层级", "label": "次级"},
-            {"source": "understanding", "target": "word_of_mouth", "type": "层级", "label": "次级"},
-            
-            {"source": "pride", "target": "praise_recognition", "type": "层级", "label": "次级"},
-            {"source": "pride", "target": "respect_appreciation", "type": "层级", "label": "次级"},
-            {"source": "gratitude", "target": "liking_preference", "type": "层级", "label": "次级"},
-            {"source": "gratitude", "target": "apology_forgiveness", "type": "层级", "label": "次级"},
-            
-            {"source": "advanced_equipment", "target": "advanced_concepts", "type": "层级", "label": "次级"},
-        ])
-        
-        return {"nodes": nodes, "edges": edges}
     
     def draw_graph(self, nodes, edges, output_path):
         """Draw graph using graph_layout module and save JSON"""
@@ -1316,7 +1037,7 @@ class InterviewGraphGenerator:
         
         # 提取实体和关系
         filename = os.path.basename(docx_path)
-        graph_data = self.extract_entities_with_glm(text, filename)
+        graph_data = self.extract_entities(text, filename)
         
         log_info(f"提取到 {len(graph_data['nodes'])} 个节点，{len(graph_data['edges'])} 条边")
         
