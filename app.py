@@ -611,8 +611,14 @@ def generate_subgraphs():
                         'error': error_msg
                     })
             
-            set_task_status(task_id, 'completed', 100, f'完成！成功处理 {sum(1 for r in results if r["success"])} 个文件')
-            current_tasks[task_id]['results'] = results
+            succeeded = sum(result['success'] for result in results)
+            failed = len(results) - succeeded
+            with task_lock:
+                current_tasks[task_id]['results'] = results
+            if not succeeded:
+                set_task_status(task_id, 'error', 100, f'生成失败：{failed} 个文件均未成功')
+            else:
+                set_task_status(task_id, 'completed', 100, f'处理结束：成功 {succeeded} 个，失败 {failed} 个')
             
         except InterruptedError as e:
             error_msg = f"[任务中断] {str(e)}"

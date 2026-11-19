@@ -107,6 +107,8 @@ python -m unittest discover -v
 
 ## 隐私与合规
 
+上传文件和生成的图谱保存在本机。抽取和合并所需的文本会发送给所选模型服务；启用远程 Reranker 时，候选文本也会发送给该服务。
+
 - 仓库只含工具代码与**合成样例**，不含任何真实访谈数据
 - `data/`、`logs/`、`.env` 均被 gitignore，不会进入版本库
 - 抽取失败显式报错，不以预设结构冒充抽取结果
@@ -114,3 +116,5 @@ python -m unittest discover -v
 ## 许可证
 
 [MIT](LICENSE)
+
+随仓分发的第三方组件许可证：[Inter](licenses/Inter-OFL.txt) · [JetBrains Mono](licenses/JetBrains-Mono-OFL.txt) · [vis-network](licenses/vis-network-MIT.txt)

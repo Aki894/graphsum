@@ -61,8 +61,12 @@ Covers crossing-free layout, explicit extraction failure, graph cleaning, chunki
 
 ## Privacy
 
+Uploaded files and generated graphs are stored locally. Text used for extraction and merging is sent to the selected model provider. If a remote reranker is enabled, it also receives the candidate text.
+
 The repository contains only tool code and synthetic samples. `data/`, `logs/`, and `.env` are gitignored; no real interview data is included. Failed extraction raises an error rather than emitting a fabricated graph.
 
 ## License
 
 [MIT](LICENSE)
+
+Bundled third-party licenses: [Inter](licenses/Inter-OFL.txt) · [JetBrains Mono](licenses/JetBrains-Mono-OFL.txt) · [vis-network](licenses/vis-network-MIT.txt)
